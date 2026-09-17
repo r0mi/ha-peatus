@@ -31,11 +31,22 @@ Tartu and Pärnu city lines, county buses, Elron trains and ferries.
 
 ### HACS (recommended)
 
-1. In HACS, choose **Integrations → ⋮ → Custom repositories**.
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.][my-hacs-badge]][my-hacs]
+
+Download it, then restart Home Assistant and add the integration:
+
+[![Open your Home Assistant instance and start setting up a new integration.][my-config-flow-badge]][my-config-flow]
+
+<details>
+<summary>Or add it by hand</summary>
+
+1. In HACS, choose **⋮ → Custom repositories**.
 2. Add `https://github.com/r0mi/ha-peatus` with category **Integration**.
-3. Install **Peatus.ee Public Transport** and restart Home Assistant.
+3. Download **Peatus.ee Public Transport** and restart Home Assistant.
 4. Go to **Settings → Devices & Services → Add Integration** and search for
    *Peatus.ee*.
+
+</details>
 
 ### Manual
 
@@ -280,5 +291,9 @@ endorsed by peatus.ee or the Transport Administration.
 [hacs-badge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg
 [license]: https://github.com/r0mi/ha-peatus/blob/main/LICENSE
 [license-badge]: https://img.shields.io/github/license/r0mi/ha-peatus?color=29c64d
+[my-config-flow]: https://my.home-assistant.io/redirect/config_flow_start/?domain=peatus
+[my-config-flow-badge]: https://my.home-assistant.io/badges/config_flow_start.svg
+[my-hacs]: https://my.home-assistant.io/redirect/hacs_repository/?owner=r0mi&repository=ha-peatus&category=integration
+[my-hacs-badge]: https://my.home-assistant.io/badges/hacs_repository.svg
 [release-badge]: https://img.shields.io/github/v/release/r0mi/ha-peatus?color=41BDF5
 [releases]: https://github.com/r0mi/ha-peatus/releases
