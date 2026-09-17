@@ -1,7 +1,4 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="custom_components/peatus/brand/dark_logo.png">
-  <img alt="Peatus.ee Public Transport for Home Assistant" src="custom_components/peatus/brand/logo.png" width="420">
-</picture>
+<img alt="Peatus.ee Public Transport for Home Assistant" src="https://raw.githubusercontent.com/r0mi/ha-peatus/main/custom_components/peatus/brand/dark_logo.png" width="420">
 
 # Peatus.ee Public Transport for Home Assistant
 
