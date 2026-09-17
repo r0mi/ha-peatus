@@ -128,7 +128,14 @@ query Departures($id: String!, $count: Int!, $timeRange: Int!) {
 
 
 def _classify_mode(mode: str | None, long_name: str | None) -> str | None:
-    """Return the mode of a route, separating trolleybuses out of the buses."""
+    """Return the mode of a route, separating trolleybuses out of the buses.
+
+    The feed publishes modes upper case; they are lower cased here so the rest of
+    the integration uses a single spelling.
+    """
+    if mode is None:
+        return None
+    mode = mode.lower()
     if mode == MODE_BUS and long_name and TROLLEYBUS_MARKER in long_name.casefold():
         return MODE_TROLLEYBUS
     return mode
@@ -169,13 +176,14 @@ class PeatusApi:
     @staticmethod
     def _parse_stop(raw: dict[str, Any]) -> Stop:
         """Convert a raw GraphQL stop object into a :class:`Stop`."""
+        vehicle_mode = raw.get("vehicleMode")
         return Stop(
             gtfs_id=raw["gtfsId"],
             name=raw.get("name") or raw["gtfsId"],
             code=raw.get("code"),
             desc=raw.get("desc"),
             zone_id=raw.get("zoneId"),
-            vehicle_mode=raw.get("vehicleMode"),
+            vehicle_mode=vehicle_mode.lower() if vehicle_mode else None,
             lat=raw.get("lat"),
             lon=raw.get("lon"),
             routes=sorted(

@@ -87,11 +87,11 @@
   "selector": {
     "modes": {
       "options": {
-        "BUS": "Bus",
-        "TROLLEYBUS": "Trolleybus",
-        "TRAM": "Tram",
-        "RAIL": "Train",
-        "FERRY": "Ferry"
+        "bus": "Bus",
+        "trolleybus": "Trolleybus",
+        "tram": "Tram",
+        "rail": "Train",
+        "ferry": "Ferry"
       }
     }
   }

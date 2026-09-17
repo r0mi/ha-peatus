@@ -33,12 +33,14 @@ CONF_DESTINATION_NAME: Final = "destination_name"
 CONF_MODES: Final = "modes"
 CONF_SEARCH: Final = "search"
 
-#: Transport modes offered to the user.
-MODE_BUS: Final = "BUS"
-MODE_TROLLEYBUS: Final = "TROLLEYBUS"
-MODE_TRAM: Final = "TRAM"
-MODE_RAIL: Final = "RAIL"
-MODE_FERRY: Final = "FERRY"
+#: Transport modes offered to the user. The feed publishes these upper case;
+#: they are lower cased on the way in so the same strings can be used as
+#: translation keys for the selector, which only allows [a-z0-9-_].
+MODE_BUS: Final = "bus"
+MODE_TROLLEYBUS: Final = "trolleybus"
+MODE_TRAM: Final = "tram"
+MODE_RAIL: Final = "rail"
+MODE_FERRY: Final = "ferry"
 
 SUPPORTED_MODES: Final = [
     MODE_BUS,

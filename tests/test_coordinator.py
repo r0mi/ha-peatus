@@ -34,7 +34,7 @@ def build_coordinator(
         domain=DOMAIN,
         data={CONF_STOP_ID: "estonia:1292", CONF_DESTINATION_ID: destination},
         options={
-            CONF_MODES: modes or ["BUS", "TRAM", "RAIL", "FERRY"],
+            CONF_MODES: modes or ["bus", "tram", "rail", "ferry"],
             CONF_SCAN_INTERVAL: 1,
         },
     )
@@ -74,39 +74,39 @@ async def test_destination_filter_starts_with_a_larger_batch(
 
 async def test_mode_filter_drops_other_modes(hass: HomeAssistant) -> None:
     """Departures whose mode is not selected are discarded."""
-    coordinator, api = build_coordinator(hass, modes=["TRAM"])
+    coordinator, api = build_coordinator(hass, modes=["tram"])
     api.async_get_departures = AsyncMock(
         return_value=[
-            make_departure(60, mode="TRAM"),
-            make_departure(120, mode="BUS"),
-            make_departure(180, mode="TRAM"),
+            make_departure(60, mode="tram"),
+            make_departure(120, mode="bus"),
+            make_departure(180, mode="tram"),
         ]
     )
 
     data = await coordinator._async_update_data()
 
-    assert [d.mode for d in data] == ["TRAM", "TRAM"]
+    assert [d.mode for d in data] == ["tram", "tram"]
 
 
 async def test_trolleybus_is_filterable_separately_from_bus(
     hass: HomeAssistant,
 ) -> None:
     """Selecting only Trolleybus excludes ordinary buses, and vice versa."""
-    trolley = make_departure(60, mode="TROLLEYBUS")
-    bus = make_departure(120, mode="BUS")
+    trolley = make_departure(60, mode="trolleybus")
+    bus = make_departure(120, mode="bus")
 
-    coordinator, api = build_coordinator(hass, modes=["TROLLEYBUS"])
+    coordinator, api = build_coordinator(hass, modes=["trolleybus"])
     api.async_get_departures = AsyncMock(return_value=[trolley, bus])
-    assert [d.mode for d in await coordinator._async_update_data()] == ["TROLLEYBUS"]
+    assert [d.mode for d in await coordinator._async_update_data()] == ["trolleybus"]
 
-    coordinator, api = build_coordinator(hass, modes=["BUS"])
+    coordinator, api = build_coordinator(hass, modes=["bus"])
     api.async_get_departures = AsyncMock(return_value=[trolley, bus])
-    assert [d.mode for d in await coordinator._async_update_data()] == ["BUS"]
+    assert [d.mode for d in await coordinator._async_update_data()] == ["bus"]
 
 
 async def test_unknown_mode_is_kept(hass: HomeAssistant) -> None:
     """A departure with no reported mode is not silently dropped."""
-    coordinator, api = build_coordinator(hass, modes=["TRAM"])
+    coordinator, api = build_coordinator(hass, modes=["tram"])
     api.async_get_departures = AsyncMock(return_value=[make_departure(60, mode=None)])
 
     assert len(await coordinator._async_update_data()) == 1

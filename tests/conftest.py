@@ -21,7 +21,7 @@ def make_stop(gtfs_id: str, name: str, **kwargs) -> Stop:
         "code": "12102-1",
         "desc": "Rong Balti jaama suunas",
         "zone_id": "Harju1",
-        "vehicle_mode": "TRAM",
+        "vehicle_mode": "tram",
         "lat": 59.4,
         "lon": 24.7,
         "routes": ["T3", "T4"],
@@ -31,7 +31,7 @@ def make_stop(gtfs_id: str, name: str, **kwargs) -> Stop:
 
 def make_departure(
     offset: int,
-    mode: str = "TRAM",
+    mode: str = "tram",
     pattern: str = "p1",
     long_name: str = "Tondi - Kadriorg",
 ) -> Departure:

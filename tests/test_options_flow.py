@@ -21,7 +21,7 @@ def api_fixture():
     with patch("custom_components.peatus.coordinator.PeatusApi") as mock:
         client = mock.return_value
         client.async_get_departures = AsyncMock(
-            return_value=[make_departure(60), make_departure(120, mode="BUS")]
+            return_value=[make_departure(60), make_departure(120, mode="bus")]
         )
         client.async_get_pattern_codes_to = AsyncMock(return_value=set())
         yield client
@@ -35,7 +35,7 @@ async def test_options_flow_updates_modes_and_interval(
         domain=DOMAIN,
         title="Viru",
         data={CONF_STOP_ID: "estonia:1292"},
-        options={CONF_MODES: ["TRAM"], CONF_SCAN_INTERVAL: 1},
+        options={CONF_MODES: ["tram"], CONF_SCAN_INTERVAL: 1},
         unique_id="estonia:1292|any",
     )
     entry.add_to_hass(hass)
@@ -43,7 +43,7 @@ async def test_options_flow_updates_modes_and_interval(
     await hass.async_block_till_done()
 
     # Only the TRAM departure is exposed to begin with.
-    assert entry.runtime_data.data[0].mode == "TRAM"
+    assert entry.runtime_data.data[0].mode == "tram"
     assert len(entry.runtime_data.data) == 1
     assert entry.runtime_data.update_interval.total_seconds() == 60
 
@@ -51,12 +51,12 @@ async def test_options_flow_updates_modes_and_interval(
     assert result["step_id"] == "init"
 
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {CONF_MODES: ["TRAM", "BUS"], CONF_SCAN_INTERVAL: 5}
+        result["flow_id"], {CONF_MODES: ["tram", "bus"], CONF_SCAN_INTERVAL: 5}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
 
-    assert entry.options == {CONF_MODES: ["TRAM", "BUS"], CONF_SCAN_INTERVAL: 5}
+    assert entry.options == {CONF_MODES: ["tram", "bus"], CONF_SCAN_INTERVAL: 5}
     # The reload picked up both the new modes and the new interval.
     assert len(entry.runtime_data.data) == 2
     assert entry.runtime_data.update_interval.total_seconds() == 300

@@ -87,11 +87,11 @@
   "selector": {
     "modes": {
       "options": {
-        "BUS": "Buss",
-        "TROLLEYBUS": "Trollibuss",
-        "TRAM": "Tramm",
-        "RAIL": "Rong",
-        "FERRY": "Parvlaev"
+        "bus": "Buss",
+        "trolleybus": "Trollibuss",
+        "tram": "Tramm",
+        "rail": "Rong",
+        "ferry": "Parvlaev"
       }
     }
   }

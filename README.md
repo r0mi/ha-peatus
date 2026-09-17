@@ -169,7 +169,7 @@ in the UI.
 | --- | --- | --- |
 | `route` | `T3` | Line number / short name |
 | `route_long_name` | `Tondi - Kadriorg` | |
-| `mode` | `TRAM` | `BUS`, `TROLLEYBUS`, `TRAM`, `RAIL` or `FERRY` |
+| `mode` | `tram` | `bus`, `trolleybus`, `tram`, `rail` or `ferry` |
 | `headsign` | `Tondi` | Where the vehicle is heading |
 | `scheduled_departure` | `2026-09-16T10:21:00+00:00` | Timetable time |
 | `realtime` | `false` | Whether the state came from a live vehicle feed |
@@ -203,9 +203,9 @@ peatus.ee feed does not distinguish them: there is **no GTFS `route_type` 11 or
 
 This integration therefore *derives* the trolleybus mode from that suffix, so
 you can filter trolleybuses in or out independently of buses, and the `mode`
-attribute reports `TROLLEYBUS`. Because the distinction rests on a naming
+attribute reports `trolleybus`. Because the distinction rests on a naming
 convention rather than structured data, it will stop working if the operator
-changes how routes are named — buses would then simply show up as `BUS`.
+changes how routes are named — buses would then simply show up as `bus`.
 
 When you pick a stop the feed calls a bus stop, **both Bus and Trolleybus are
 preselected**, so trolleybus departures are never hidden by accident.

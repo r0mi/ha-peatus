@@ -71,15 +71,15 @@ async def test_search_flow_without_destination(
     assert result["step_id"] == "settings"
 
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_MODES: ["TRAM"], CONF_SCAN_INTERVAL: 2}
+        result["flow_id"], {CONF_MODES: ["tram"], CONF_SCAN_INTERVAL: 2}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Viru (12102-1)"
     assert result["data"][CONF_STOP_ID] == "estonia:1292"
-    assert result["data"][CONF_STOP_MODE] == "TRAM"
+    assert result["data"][CONF_STOP_MODE] == "tram"
     assert result["data"][CONF_STOP_DESC] == "Rong Balti jaama suunas"
     assert result["data"][CONF_DESTINATION_ID] is None
-    assert result["options"] == {CONF_MODES: ["TRAM"], CONF_SCAN_INTERVAL: 2}
+    assert result["options"] == {CONF_MODES: ["tram"], CONF_SCAN_INTERVAL: 2}
 
 
 async def test_search_flow_with_destination(hass: HomeAssistant, api, no_setup) -> None:
@@ -107,7 +107,7 @@ async def test_search_flow_with_destination(hass: HomeAssistant, api, no_setup) 
     assert result["step_id"] == "settings"
 
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_MODES: ["TRAM"], CONF_SCAN_INTERVAL: 1}
+        result["flow_id"], {CONF_MODES: ["tram"], CONF_SCAN_INTERVAL: 1}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["title"] == "Viru (12102-1) → Vana-Lõuna (12345-1)"
@@ -144,9 +144,9 @@ async def test_destination_cannot_equal_origin(
     [
         # A bus stop may also be served by trolleybus routes, which the feed
         # publishes as buses, so both are preselected.
-        ("BUS", ["BUS", "TROLLEYBUS"]),
-        ("TRAM", ["TRAM"]),
-        (None, ["BUS", "TROLLEYBUS", "TRAM", "RAIL", "FERRY"]),
+        ("bus", ["bus", "trolleybus"]),
+        ("tram", ["tram"]),
+        (None, ["bus", "trolleybus", "tram", "rail", "ferry"]),
     ],
 )
 async def test_default_modes_for_stop(
@@ -279,7 +279,7 @@ async def _add_board(hass, api, destination: str | None = None):
     if result["type"] is not FlowResultType.FORM:
         return result
     return await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_MODES: ["TRAM"], CONF_SCAN_INTERVAL: 1}
+        result["flow_id"], {CONF_MODES: ["tram"], CONF_SCAN_INTERVAL: 1}
     )
 
 

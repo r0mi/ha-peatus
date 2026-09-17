@@ -48,7 +48,7 @@ def build_entry(modes: list[str] | None = None, **overrides) -> MockConfigEntry:
         CONF_STOP_ID: "estonia:1292",
         CONF_STOP_NAME: "Viru",
         CONF_STOP_CODE: "12102-1",
-        CONF_STOP_MODE: "TRAM",
+        CONF_STOP_MODE: "tram",
         CONF_STOP_DESC: "Vabaduse väljaku suunas",
         CONF_DESTINATION_ID: None,
         CONF_DESTINATION_NAME: None,
@@ -58,7 +58,7 @@ def build_entry(modes: list[str] | None = None, **overrides) -> MockConfigEntry:
         domain=DOMAIN,
         title="Viru (12102-1)",
         data=data,
-        options={CONF_MODES: modes or ["TRAM"], CONF_SCAN_INTERVAL: 1},
+        options={CONF_MODES: modes or ["tram"], CONF_SCAN_INTERVAL: 1},
         unique_id="estonia:1292|any",
     )
 
@@ -181,7 +181,7 @@ async def test_state_is_timestamp_with_attributes(hass: HomeAssistant, api) -> N
     assert state.attributes["device_class"] == "timestamp"
     assert state.attributes["route"] == "T3"
     assert state.attributes["headsign"] == "Tondi"
-    assert state.attributes["mode"] == "TRAM"
+    assert state.attributes["mode"] == "tram"
     assert state.attributes["realtime"] is True
     assert state.attributes["stop"] == "Viru"
     assert state.attributes["stop_code"] == "12102-1"
@@ -211,14 +211,14 @@ async def test_missing_departures_are_unknown(hass: HomeAssistant, api) -> None:
 async def test_departure_icons_follow_vehicle_mode(hass: HomeAssistant, api) -> None:
     """Each numbered departure is iconed by the mode of that departure."""
     api.async_get_departures.return_value = [
-        make_departure(60, mode="BUS"),
-        make_departure(120, mode="TROLLEYBUS"),
-        make_departure(180, mode="TRAM"),
-        make_departure(240, mode="RAIL"),
-        make_departure(300, mode="FERRY"),
+        make_departure(60, mode="bus"),
+        make_departure(120, mode="trolleybus"),
+        make_departure(180, mode="tram"),
+        make_departure(240, mode="rail"),
+        make_departure(300, mode="ferry"),
     ]
     await setup_entry(
-        hass, build_entry(modes=["BUS", "TROLLEYBUS", "TRAM", "RAIL", "FERRY"])
+        hass, build_entry(modes=["bus", "trolleybus", "tram", "rail", "ferry"])
     )
 
     icons = {
