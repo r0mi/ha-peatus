@@ -145,24 +145,6 @@ Renames you make are preserved across restarts and upgrades.
 The state is a **timestamp**. Sensors report `unknown` when there are fewer
 matching departures than 10, which is normal at night.
 
-### Icons
-
-`Next departure` uses `mdi:clock-out`. Each numbered sensor is iconed by the
-vehicle actually running that departure, so a stop served by several modes shows
-them at a glance:
-
-| Mode | Icon |
-| --- | --- |
-| Bus | `mdi:bus` |
-| Trolleybus | `mdi:bus` — Material Design Icons has no trolleybus glyph |
-| Tram | `mdi:tram` |
-| Train | `mdi:train` |
-| Ferry | `mdi:ferry` |
-
-A numbered sensor with no departure due falls back to `mdi:timetable`, since no
-vehicle mode is known at that point. All of these can be overridden per entity
-in the UI.
-
 ### Attributes
 
 | Attribute | Example | Notes |
@@ -184,31 +166,6 @@ in the UI.
 > countdown, use the state instead — Home Assistant's UI already renders a
 > timestamp as relative time, and templates can use
 > `as_timestamp(states('sensor.x')) - as_timestamp(now())`.
-
-### About trolleybuses
-
-Tallinn reintroduced trolleybus service with hybrid vehicles in 2026, but the
-peatus.ee feed does not distinguish them: there is **no GTFS `route_type` 11 or
-800 anywhere** in the 2360 published routes, and every trolleybus route is
-`route_type: 3` / `mode: BUS`. The only marker is the Estonian word
-`(trollibuss)` in the route's long name:
-
-```
-72  Mustamäe - Kopli (trollibuss)
-81  Mustamäe - Kaubamaja (trollibuss)
-83  Mustamäe - Kaubamaja (trollibuss)
-84  Keskuse - Balti jaam (trollibuss)
-85  Mustamäe - Balti jaam (trollibuss)
-```
-
-This integration therefore *derives* the trolleybus mode from that suffix, so
-you can filter trolleybuses in or out independently of buses, and the `mode`
-attribute reports `trolleybus`. Because the distinction rests on a naming
-convention rather than structured data, it will stop working if the operator
-changes how routes are named — buses would then simply show up as `bus`.
-
-When you pick a stop the feed calls a bus stop, **both Bus and Trolleybus are
-preselected**, so trolleybus departures are never hidden by accident.
 
 ### About realtime data
 
@@ -307,34 +264,11 @@ pytest tests -q
 ruff check custom_components tests
 ```
 
-## Brand images
-
-The icon and logo ship inside the integration, in `custom_components/peatus/brand/`:
-
-| | Standard | hDPI |
-| --- | --- | --- |
-| Icon | `icon.png` 256×256 | `icon@2x.png` 512×512 |
-| Icon (dark) | `dark_icon.png` 256×256 | `dark_icon@2x.png` 512×512 |
-| Logo | `logo.png` 914×256 | `logo@2x.png` 1828×512 |
-| Logo (dark) | `dark_logo.png` 914×256 | `dark_logo@2x.png` 1828×512 |
-
-Since **Home Assistant 2026.3** these are served by the local [Brands Proxy
-API][brands-proxy] from `/api/brands/integration/peatus/...`, cached on disk
-with stale-while-revalidate so they survive internet outages. Local images take
-priority over the brands CDN, and no `manifest.json` entry or pull request
-against [home-assistant/brands][brands] is needed — that repository's
-`custom_integrations/` folder is legacy.
-
-On Home Assistant older than 2026.3 the integration works normally, but falls
-back to the default placeholder icon.
-
 ## Credits
 
 Timetable data comes from the Estonian national public transport registry via
 [peatus.ee](https://web.peatus.ee/). This project is not affiliated with or
 endorsed by peatus.ee or the Transport Administration.
 
-[brands]: https://github.com/home-assistant/brands
-[brands-proxy]: https://developers.home-assistant.io/blog/2026/02/24/brands-proxy-api/
 [hacs]: https://github.com/hacs/integration
 [hacs-badge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg
