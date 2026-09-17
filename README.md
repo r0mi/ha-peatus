@@ -3,6 +3,8 @@
 # Peatus.ee Public Transport for Home Assistant
 
 [![hacs][hacs-badge]][hacs]
+[![Release][release-badge]][releases]
+[![License][license-badge]][license]
 [![Validate](https://github.com/r0mi/ha-peatus/actions/workflows/validate.yml/badge.svg)](https://github.com/r0mi/ha-peatus/actions/workflows/validate.yml)
 
 Home Assistant integration that shows the next **10 departures** from any Estonian
@@ -269,3 +271,7 @@ endorsed by peatus.ee or the Transport Administration.
 
 [hacs]: https://github.com/hacs/integration
 [hacs-badge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg
+[license]: https://github.com/r0mi/ha-peatus/blob/main/LICENSE
+[license-badge]: https://img.shields.io/github/license/r0mi/ha-peatus?color=28a745
+[release-badge]: https://img.shields.io/github/v/release/r0mi/ha-peatus?color=41BDF5
+[releases]: https://github.com/r0mi/ha-peatus/releases
