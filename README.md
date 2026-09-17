@@ -272,6 +272,6 @@ endorsed by peatus.ee or the Transport Administration.
 [hacs]: https://github.com/hacs/integration
 [hacs-badge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg
 [license]: https://github.com/r0mi/ha-peatus/blob/main/LICENSE
-[license-badge]: https://img.shields.io/github/license/r0mi/ha-peatus?color=28a745
+[license-badge]: https://img.shields.io/github/license/r0mi/ha-peatus?color=29c64d
 [release-badge]: https://img.shields.io/github/v/release/r0mi/ha-peatus?color=41BDF5
 [releases]: https://github.com/r0mi/ha-peatus/releases
