@@ -14,29 +14,6 @@ public transport stop, using the same GraphQL API that powers
 Covers the whole national feed — Tallinn city buses, trolleybuses and trams,
 Tartu and Pärnu city lines, county buses, Elron trains and ferries.
 
-## Coverage
-
-The API serves a single national feed (`feedId: estonia`) — 62 operators,
-2360 routes and 18 313 stops across 34 fare zones, from Harju and Viru to
-Tartu, Rapla and Pärnu. Every mode in the feed is supported:
-
-| Mode | Routes | Operators |
-| --- | --- | --- |
-| Bus | 2310 | ~60, from Tallinn city lines to county and long-distance coaches |
-| Train | 28 | Elron |
-| Ferry | 11 | TS Laevad, Kihnu Veeteed, Saaremaa vald, Piiroja Invest |
-| Tram | 6 | Tallinna Linnatransport |
-| Trolleybus | 5 | Tallinna Linnatransport |
-
-Only GTFS `route_type` 0, 2, 3 and 4 appear in the feed, so this list is
-complete — there is nothing published that the integration cannot show. A
-departure board works just as well for a ferry harbour (`Virtsu sadam`), a
-railway station (`Tartu`) or a village bus stop as for a Tallinn tram platform.
-
-The feed also carries the international coach stops that Estonian long-distance
-routes call at — Riga, Vilnius, Kaunas, Warsaw, Prague — so those can be
-configured too.
-
 ## Features
 
 - **11 sensors per stop** — `Next departure` plus `Departure 1` … `Departure 10`.
@@ -253,6 +230,29 @@ your origin is resolved once and cached for 6 hours, and each poll only asks for
 each departure's pattern code. Without filters a poll transfers roughly 2 kB.
 When a filter is active the integration requests a larger batch, and grows it
 only if too many departures were discarded.
+
+## Coverage
+
+The API serves a single national feed (`feedId: estonia`) — 62 operators,
+2360 routes and 18 313 stops across 34 fare zones, from Harju and Viru to
+Tartu, Rapla and Pärnu. Every mode in the feed is supported:
+
+| Mode | Routes | Operators |
+| --- | --- | --- |
+| Bus | 2310 | ~60, from Tallinn city lines to county and long-distance coaches |
+| Train | 28 | Elron |
+| Ferry | 11 | TS Laevad, Kihnu Veeteed, Saaremaa vald, Piiroja Invest |
+| Tram | 6 | Tallinna Linnatransport |
+| Trolleybus | 5 | Tallinna Linnatransport |
+
+Only GTFS `route_type` 0, 2, 3 and 4 appear in the feed, so this list is
+complete — there is nothing published that the integration cannot show. A
+departure board works just as well for a ferry harbour (`Virtsu sadam`), a
+railway station (`Tartu`) or a village bus stop as for a Tallinn tram platform.
+
+The feed also carries the international coach stops that Estonian long-distance
+routes call at — Riga, Vilnius, Kaunas, Warsaw, Prague — so those can be
+configured too.
 
 ## Development
 
