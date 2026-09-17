@@ -1,0 +1,98 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Lisa väljumiste tabloo",
+        "description": "Vali, kuidas soovid peatust tuvastada.",
+        "menu_options": {
+          "search": "Otsi peatust nime järgi",
+          "gtfs_id": "Sisesta GTFS peatuse ID"
+        }
+      },
+      "search": {
+        "title": "Leia väljumispeatus",
+        "description": "Sisesta osa peatuse nimest, näiteks „Viru“.",
+        "data": {
+          "name": "Peatuse nimi"
+        }
+      },
+      "gtfs_id": {
+        "title": "Sisesta väljumispeatuse ID",
+        "description": "GTFS ID nagu peatus.ee kasutab, näiteks estonia:1292.",
+        "data": {
+          "stop_id": "GTFS peatuse ID"
+        }
+      },
+      "pick_stop": {
+        "title": "Vali väljumispeatus",
+        "description": "Peatuste nimed korduvad üle Eesti. Suund, tsoon ja teenindavad liinid on näidatud, et aidata valida õiget platvormi.",
+        "data": {
+          "stop": "Peatus"
+        }
+      },
+      "destination": {
+        "title": "Sihtpeatus (valikuline)",
+        "description": "Jäta tühjaks, et näha kõiki väljumisi peatusest {stop}. Sisesta peatuse nimi, et näha ainult sinna suunduvaid väljumisi.",
+        "data": {
+          "name": "Sihtpeatuse nimi"
+        }
+      },
+      "pick_destination": {
+        "title": "Vali sihtpeatus",
+        "data": {
+          "stop": "Peatus"
+        }
+      },
+      "settings": {
+        "title": "Tabloo seaded",
+        "description": "Näidatakse ainult valitud transpordiliike. Tallinna trollibussiliinid on andmeallikas avaldatud bussidena, seetõttu on need siin eraldi välja toodud. Tihedamini kui kord minutis küsimine ei anna lisainfot, sest sõiduplaani andmed ei uuene kiiremini.",
+        "data": {
+          "modes": "Transpordiliigid",
+          "scan_interval": "Uuendamise intervall"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Ei õnnestunud ühenduda peatus.ee-ga. Palun proovi uuesti.",
+      "no_stops_found": "Ükski peatus ei vastanud sellele nimele.",
+      "unknown_stop": "Sellise GTFS ID-ga peatust ei leidu.",
+      "same_stop": "Sihtpeatus peab erinema väljumispeatusest."
+    },
+    "abort": {
+      "already_configured": "See peatuse ja sihtkoha kombinatsioon on juba seadistatud."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tabloo seaded",
+        "data": {
+          "modes": "Transpordiliigid",
+          "scan_interval": "Uuendamise intervall"
+        },
+        "description": "Näidatakse ainult valitud transpordiliike. Tallinna trollibussiliinid on andmeallikas avaldatud bussidena, seetõttu on need siin eraldi välja toodud. Tihedamini kui kord minutis küsimine ei anna lisainfot, sest sõiduplaani andmed ei uuene kiiremini."
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "next_departure": {
+        "name": "Järgmine väljumine"
+      },
+      "departure": {
+        "name": "Väljumine {index}"
+      }
+    }
+  },
+  "selector": {
+    "modes": {
+      "options": {
+        "BUS": "Buss",
+        "TROLLEYBUS": "Trollibuss",
+        "TRAM": "Tramm",
+        "RAIL": "Rong",
+        "FERRY": "Parvlaev"
+      }
+    }
+  }
+}

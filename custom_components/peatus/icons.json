@@ -1,0 +1,12 @@
+{
+  "entity": {
+    "sensor": {
+      "next_departure": {
+        "default": "mdi:clock-out"
+      },
+      "departure": {
+        "default": "mdi:timetable"
+      }
+    }
+  }
+}

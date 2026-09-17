@@ -1,0 +1,98 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a departure board",
+        "description": "Choose how to identify the stop you want to watch.",
+        "menu_options": {
+          "search": "Search for a stop by name",
+          "gtfs_id": "Enter a GTFS stop ID"
+        }
+      },
+      "search": {
+        "title": "Find the departure stop",
+        "description": "Enter part of the stop name, for example \"Viru\".",
+        "data": {
+          "name": "Stop name"
+        }
+      },
+      "gtfs_id": {
+        "title": "Enter the departure stop ID",
+        "description": "The GTFS ID as used by peatus.ee, for example estonia:1292.",
+        "data": {
+          "stop_id": "GTFS stop ID"
+        }
+      },
+      "pick_stop": {
+        "title": "Select the departure stop",
+        "description": "Stop names repeat across Estonia. The direction, zone and served lines are shown to help you pick the right platform.",
+        "data": {
+          "stop": "Stop"
+        }
+      },
+      "destination": {
+        "title": "Destination (optional)",
+        "description": "Leave empty to show all departures from {stop}. Enter a stop name to only show departures that continue to that stop.",
+        "data": {
+          "name": "Destination stop name"
+        }
+      },
+      "pick_destination": {
+        "title": "Select the destination stop",
+        "data": {
+          "stop": "Stop"
+        }
+      },
+      "settings": {
+        "title": "Departure board settings",
+        "description": "Only the selected transport modes are shown. Tallinn's trolleybus routes are published as buses by the data source, so they are listed separately here. Polling more often than once a minute is not useful, as the timetable data does not change faster than that.",
+        "data": {
+          "modes": "Transport modes",
+          "scan_interval": "Update interval"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach peatus.ee. Please try again.",
+      "no_stops_found": "No stops matched that name.",
+      "unknown_stop": "No stop exists with that GTFS ID.",
+      "same_stop": "The destination must be different from the departure stop."
+    },
+    "abort": {
+      "already_configured": "This stop and destination combination is already set up."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Departure board settings",
+        "data": {
+          "modes": "Transport modes",
+          "scan_interval": "Update interval"
+        },
+        "description": "Only the selected transport modes are shown. Tallinn's trolleybus routes are published as buses by the data source, so they are listed separately here. Polling more often than once a minute is not useful, as the timetable data does not change faster than that."
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "next_departure": {
+        "name": "Next departure"
+      },
+      "departure": {
+        "name": "Departure {index}"
+      }
+    }
+  },
+  "selector": {
+    "modes": {
+      "options": {
+        "BUS": "Bus",
+        "TROLLEYBUS": "Trolleybus",
+        "TRAM": "Tram",
+        "RAIL": "Train",
+        "FERRY": "Ferry"
+      }
+    }
+  }
+}
