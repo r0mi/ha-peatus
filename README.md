@@ -256,12 +256,19 @@ configured too.
 
 ## Development
 
+Requires Python 3.14.2 or newer — the floor set by the Home Assistant version
+the tests run against.
+
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install pytest-homeassistant-custom-component ruff
-pytest tests -q
-ruff check custom_components tests
+pip install -r requirements-test.txt
+pytest -q
+ruff format --check .
+ruff check .
 ```
+
+These are the same commands CI runs, against the same pinned versions, so a
+clean run here means a green `Validate` workflow.
 
 ## Credits
 
