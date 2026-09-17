@@ -2,10 +2,18 @@ name: Validate
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   schedule:
     - cron: "30 4 * * 1"
   workflow_dispatch:
+  # Called by release.yml so a tag is only published once these pass.
+  workflow_call:
+
+env:
+  # Home Assistant 2026.9 requires at least Python 3.14.2.
+  PYTHON_VERSION: "3.14"
 
 jobs:
   hassfest:
@@ -23,3 +31,42 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-test.txt
+
+      - name: Install test dependencies
+        run: pip install -r requirements-test.txt
+
+      - name: Run pytest
+        run: pytest -q
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # Install ruff alone rather than the whole file: linting does not need
+      # Home Assistant, and the pin still lives in one place.
+      - name: Install ruff
+        run: pip install "$(grep '^ruff==' requirements-test.txt)"
+
+      - name: Check formatting
+        run: ruff format --check .
+
+      - name: Lint
+        run: ruff check .

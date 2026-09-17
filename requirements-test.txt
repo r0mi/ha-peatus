@@ -1,0 +1,4 @@
+# Pulls in Home Assistant itself plus the pytest fixtures for custom components.
+# Keep in step with the "homeassistant" floor in hacs.json.
+pytest-homeassistant-custom-component==0.13.365
+ruff==0.16.8
