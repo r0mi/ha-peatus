@@ -196,11 +196,25 @@ automation:
 
 ## Example dashboard card
 
+Show the next three departures
+
 ```yaml
 type: entities
 title: Viru → Vana-Lõuna
 entities:
   - entity: sensor.peatus_viru_departure_1
+    type: custom:template-entity-row
+    name: >
+      {{ state_attr(config.entity, 'route') }}
+      → {{ state_attr(config.entity, 'headsign') }}
+    state: "{{ time_until(states(config.entity) | as_datetime) or 'departing' }}"
+  - entity: sensor.peatus_viru_departure_2
+    type: custom:template-entity-row
+    name: >
+      {{ state_attr(config.entity, 'route') }}
+      → {{ state_attr(config.entity, 'headsign') }}
+    state: "{{ time_until(states(config.entity) | as_datetime) or 'departing' }}"
+  - entity: sensor.peatus_viru_departure_3
     type: custom:template-entity-row
     name: >
       {{ state_attr(config.entity, 'route') }}
