@@ -205,7 +205,7 @@ entities:
     name: >
       {{ state_attr(config.entity, 'route') }}
       → {{ state_attr(config.entity, 'headsign') }}
-    state: "{{ relative_time(states(config.entity) | as_datetime) }}"
+    state: "{{ time_until(states(config.entity) | as_datetime) or 'departing' }}"
 ```
 
 A plain `entities` card works too — Home Assistant renders timestamp sensors as
