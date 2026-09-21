@@ -9,6 +9,17 @@ DOMAIN: Final = "peatus"
 #: Estonian national Digitransit/OpenTripPlanner GraphQL endpoint used by web.peatus.ee.
 API_URL: Final = "https://api.peatus.ee/routing/v1/routers/estonia/index/graphql"
 
+#: Pelias geocoder behind web.peatus.ee's own stop search. Stops are looked up
+#: here rather than through OpenTripPlanner's ``stops(name:)`` field, which is
+#: Lucene backed: a hyphen in the query reads as a NOT operator, so hyphenated
+#: Estonian stop names such as "Vana-Pääsküla" match nothing, and it silently
+#: caps every result set at ten stops.
+GEOCODER_URL: Final = "https://api.peatus.ee/geocoding/v1/autocomplete"
+
+#: Most stops asked of the geocoder in one search. It returns only genuine
+#: matches rather than padding to this size, so it is a ceiling, not a target.
+SEARCH_LIMIT: Final = 40
+
 #: Number of upcoming departure sensors created per configured stop.
 NUM_DEPARTURES: Final = 10
 

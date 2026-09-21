@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
 from aiohttp import ClientError, ClientSession
 
-from .const import API_URL, MODE_BUS, MODE_TROLLEYBUS, TIME_RANGE, TROLLEYBUS_MARKER
+from .const import (
+    API_URL,
+    GEOCODER_URL,
+    MODE_BUS,
+    MODE_TROLLEYBUS,
+    SEARCH_LIMIT,
+    TIME_RANGE,
+    TROLLEYBUS_MARKER,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,11 +48,16 @@ class Stop:
     lat: float | None
     lon: float | None
     routes: list[str]
+    #: Municipality and district, e.g. "Tallinna linn, Nõmme". Only the
+    #: geocoder knows this; it is absent on stops fetched straight by ID.
+    locality: str | None = None
 
     @property
     def label(self) -> str:
         """Return a human readable label used in the config flow picker."""
         parts = [self.name if not self.code else f"{self.name} ({self.code})"]
+        if self.locality:
+            parts.append(self.locality)
         if self.desc:
             parts.append(self.desc)
         if self.vehicle_mode:
@@ -86,6 +100,12 @@ query SearchStops($name: String!) {{
 }}
 """
 
+GET_STOPS_QUERY = f"""
+query GetStops($ids: [String]!) {{
+  stops(ids: $ids) {{ {_STOP_FIELDS} }}
+}}
+"""
+
 GET_STOP_QUERY = f"""
 query GetStop($id: String!) {{
   stop(id: $id) {{ {_STOP_FIELDS} }}
@@ -125,6 +145,28 @@ query Departures($id: String!, $count: Int!, $timeRange: Int!) {
   }
 }
 """
+
+
+#: Punctuation and underscores are operators to the Lucene query parser behind
+#: ``stops(name:)``, not characters to match, so the name-search fallback
+#: replaces them with the spaces the parser treats as term separators.
+_QUERY_OPERATORS = re.compile(r"[\W_]+", re.UNICODE)
+
+
+def _gtfs_id_from_feature(raw: dict[str, Any]) -> str | None:
+    """Return the GTFS ID of a geocoder stop feature, or ``None`` if it has none.
+
+    Stop features carry an ID like ``GTFS:estonia:952#04401-1``: the feed's own
+    ``estonia:952`` behind a source tag, with the platform code repeated after
+    the fragment marker.
+    """
+    properties = raw.get("properties") or {}
+    if properties.get("layer") != "stop":
+        return None
+    source, _, gtfs_id = str(properties.get("id") or "").partition(":")
+    if source.upper() != "GTFS" or not gtfs_id:
+        return None
+    return gtfs_id.split("#", 1)[0]
 
 
 def _classify_mode(mode: str | None, long_name: str | None) -> str | None:
@@ -173,8 +215,23 @@ class PeatusApi:
             raise PeatusApiError("peatus.ee returned no data")
         return data
 
+    async def _get(self, url: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Fetch and decode a JSON document over GET."""
+        try:
+            response = await self._session.get(
+                url, params=params, timeout=REQUEST_TIMEOUT
+            )
+            response.raise_for_status()
+            # Pelias answers as application/json; be lenient about the header so
+            # a proxy in front of it cannot break the search.
+            return await response.json(content_type=None)
+        except ClientError as err:
+            raise PeatusApiError(f"Error talking to peatus.ee: {err}") from err
+        except TimeoutError as err:
+            raise PeatusApiError("Timeout talking to peatus.ee") from err
+
     @staticmethod
-    def _parse_stop(raw: dict[str, Any]) -> Stop:
+    def _parse_stop(raw: dict[str, Any], locality: str | None = None) -> Stop:
         """Convert a raw GraphQL stop object into a :class:`Stop`."""
         vehicle_mode = raw.get("vehicleMode")
         return Stop(
@@ -186,6 +243,7 @@ class PeatusApi:
             vehicle_mode=vehicle_mode.lower() if vehicle_mode else None,
             lat=raw.get("lat"),
             lon=raw.get("lon"),
+            locality=locality,
             routes=sorted(
                 {
                     route["shortName"]
@@ -196,8 +254,74 @@ class PeatusApi:
         )
 
     async def async_search_stops(self, name: str) -> list[Stop]:
-        """Search stops by (partial) name."""
-        data = await self._query(SEARCH_STOPS_QUERY, {"name": name})
+        """Search stops by (partial) name.
+
+        Searches the geocoder web.peatus.ee itself uses, because
+        OpenTripPlanner's ``stops(name:)`` field cannot answer this reliably:
+        it parses the query as Lucene, where punctuation is an operator rather
+        than text, so hyphenated names like "Vana-Pääsküla" match nothing, and
+        it truncates every answer to ten stops without saying so.
+
+        The geocoder only identifies stops, so the matches are hydrated from
+        the feed to recover the modes and routes the picker labels them with.
+        """
+        try:
+            features = await self._geocode(name)
+        except PeatusApiError as err:
+            _LOGGER.debug("Geocoder unreachable, falling back to name search: %s", err)
+            return await self._async_search_stops_by_name(name)
+
+        localities: dict[str, str | None] = {}
+        for feature in features:
+            if (gtfs_id := _gtfs_id_from_feature(feature)) is None:
+                continue
+            # Keep the first hit per stop: the geocoder answers by descending
+            # relevance, and a stop can appear once per name it is indexed under.
+            localities.setdefault(
+                gtfs_id, (feature.get("properties") or {}).get("locality")
+            )
+
+        if not localities:
+            # The geocoder is indexed separately from the feed, so let the name
+            # search have a go at anything it has never heard of.
+            return await self._async_search_stops_by_name(name)
+
+        return await self._async_hydrate_stops(localities)
+
+    async def _geocode(self, name: str) -> list[dict[str, Any]]:
+        """Return the geocoder's stop features for a (partial) name."""
+        payload = await self._get(
+            GEOCODER_URL,
+            {"text": name, "size": SEARCH_LIMIT, "layers": "stop"},
+        )
+        return payload.get("features") or []
+
+    async def _async_hydrate_stops(
+        self, localities: dict[str, str | None]
+    ) -> list[Stop]:
+        """Fetch full records for the given stop IDs, keeping the given order."""
+        data = await self._query(GET_STOPS_QUERY, {"ids": list(localities)})
+        stops: list[Stop] = []
+        for raw in data.get("stops") or []:
+            # The feed returns a null per ID it does not know, in the order
+            # asked, so a stop the geocoder still lists is simply skipped.
+            if raw is None:
+                continue
+            stops.append(self._parse_stop(raw, localities.get(raw.get("gtfsId"))))
+        return stops
+
+    async def _async_search_stops_by_name(self, name: str) -> list[Stop]:
+        """Search stops through the feed's own name index.
+
+        Only a fallback for when the geocoder cannot answer: the query is
+        stripped down to bare terms so the Lucene parser behind it treats the
+        whole name as text to match, at the cost of matching each word of a
+        name independently.
+        """
+        terms = _QUERY_OPERATORS.sub(" ", name).strip()
+        if not terms:
+            return []
+        data = await self._query(SEARCH_STOPS_QUERY, {"name": terms})
         return [self._parse_stop(raw) for raw in (data.get("stops") or [])]
 
     async def async_get_stop(self, gtfs_id: str) -> Stop:

@@ -60,12 +60,12 @@ The config flow walks through four short steps:
 1. **How to find the stop** — search by name, or paste a GTFS ID such as
    `estonia:1292`.
 2. **Pick the stop.** Stop names repeat all over Estonia, so each candidate is
-   labelled with its code, direction, fare zone and the lines it serves, for
-   example:
+   labelled with its code, municipality, direction, fare zone and the lines it
+   serves, for example:
 
    ```
-   Viru (12101-3) · Bus · Harju1 · 107, 108, 109, 111, 111A, 116, …
-   Viru (7801121-1) · Kavastu suunas · Bus · 742, 764, 809, 845
+   Viru (12101-1) · Tallinna linn, Kesklinn · Bus · Harju1 · 1, 18, 20, 35, 36, 5
+   Viru (7801122-1) · Tartumaa, Peipsiääre vald · Koosa suunas · Bus · 741, 764, 809
    ```
 
    Note that a stop is a single platform in one direction — pick the side of the
@@ -248,6 +248,17 @@ automation:
 The integration queries the OpenTripPlanner GraphQL endpoint at
 `https://api.peatus.ee/routing/v1/routers/estonia/index/graphql`. No API key is
 required.
+
+Stop search goes through the Pelias geocoder at
+`https://api.peatus.ee/geocoding/v1/autocomplete`, the same one web.peatus.ee
+searches with, rather than OpenTripPlanner's `stops(name:)` field. That field
+parses its argument as Lucene, so punctuation acts as an operator instead of
+text to match — a hyphen reads as NOT, which makes hyphenated names like
+`Vana-Pääsküla` match nothing — and it truncates every answer to ten stops
+without saying so. The geocoder only identifies stops, so the matches are
+hydrated from the feed in one batch to recover their modes and routes. If the
+geocoder cannot be reached, the search falls back to `stops(name:)` with the
+query reduced to bare terms.
 
 Destination filtering is done by **route pattern**, not by walking every trip's
 stop list on each poll: the set of patterns that reach your destination after
