@@ -19,6 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The notes are built from the commits since the previous tag, which
+          # a shallow checkout does not have.
+          fetch-depth: 0
 
       - name: Check the tag matches manifest.json
         run: |
@@ -29,7 +33,36 @@ jobs:
             exit 1
           fi
 
+      # --generate-notes lists merged pull requests, and this repository commits
+      # straight to main, so it produced nothing but the changelog link. The
+      # notes are built from the commit subjects instead, minus the release
+      # commit itself, which only bumps the version.
+      - name: Build the release notes
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          previous="$(git describe --tags --abbrev=0 --match 'v*' "${GITHUB_REF_NAME}^" 2>/dev/null || true)"
+          changes="$(git log --no-merges --reverse --format='- %s' \
+            "${previous:+${previous}..}${GITHUB_REF_NAME}" \
+            | grep -v '^- Release [0-9]' || true)"
+          {
+            if [ -n "$changes" ]; then
+              printf '%s\n\n' "$changes"
+            fi
+            if [ -n "$previous" ]; then
+              printf '**Full Changelog**: https://github.com/%s/compare/%s...%s\n' \
+                "$REPOSITORY" "$previous" "${GITHUB_REF_NAME}"
+            else
+              printf '**Full Changelog**: https://github.com/%s/commits/%s\n' \
+                "$REPOSITORY" "${GITHUB_REF_NAME}"
+            fi
+          } > release-notes.md
+          cat release-notes.md
+
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --generate-notes
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md
