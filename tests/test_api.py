@@ -9,6 +9,7 @@ from custom_components.peatus.api import (
     PeatusApi,
     _classify_mode,
     _gtfs_id_from_feature,
+    route_sort_key,
 )
 
 
@@ -217,3 +218,34 @@ async def test_search_stops_skips_name_search_without_terms(api, session) -> Non
 
     assert await api.async_search_stops(" -- ") == []
     assert session.posted is None
+
+
+def test_route_sort_key_orders_like_a_timetable() -> None:
+    """Route numbers sort numerically, with any prefix or suffix as text."""
+    routes = ["119", "1", "18V", "10", "T3", "18", "104B", "104A", "2", "S12", "Expr"]
+    assert sorted(routes, key=route_sort_key) == [
+        "1",
+        "2",
+        "10",
+        "18",
+        "18V",
+        "104A",
+        "104B",
+        "119",
+        "S12",
+        "T3",
+        # Routes with no number at all come last.
+        "Expr",
+    ]
+
+
+def test_parse_stop_orders_routes_naturally() -> None:
+    """A stop's route list is ordered for the picker label, not as text."""
+    stop = PeatusApi._parse_stop(
+        {
+            "gtfsId": "estonia:952",
+            "name": "Vana-Pääsküla",
+            "routes": [{"shortName": n} for n in ("191", "18", "1", "119", "10")],
+        }
+    )
+    assert stop.routes == ["1", "10", "18", "119", "191"]

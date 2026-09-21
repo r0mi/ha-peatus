@@ -27,11 +27,18 @@ from homeassistant.helpers.selector import (
     TextSelectorConfig,
 )
 
-from .api import PeatusApi, PeatusApiError, PeatusStopNotFoundError, Stop
+from .api import (
+    PeatusApi,
+    PeatusApiError,
+    PeatusStopNotFoundError,
+    Stop,
+    route_sort_key,
+)
 from .const import (
     CONF_DESTINATION_ID,
     CONF_DESTINATION_NAME,
     CONF_MODES,
+    CONF_ROUTES,
     CONF_STOP_CODE,
     CONF_STOP_DESC,
     CONF_STOP_ID,
@@ -77,11 +84,38 @@ INTERVAL_SELECTOR = NumberSelector(
 )
 
 
-def _settings_schema(modes: list[str], interval: int) -> vol.Schema:
-    """Return the schema for the mode / interval step."""
+def _routes_selector(routes: list[str]) -> SelectSelector:
+    """Return a selector listing the route numbers a stop is served by."""
+    return SelectSelector(
+        SelectSelectorConfig(
+            options=list(routes),
+            multiple=True,
+            mode=SelectSelectorMode.DROPDOWN,
+            # A line the timetable has dropped must stay selectable for as long
+            # as it is saved in the entry, so the filter is not silently
+            # cleared, and a line the stop has just gained can be typed in
+            # before the feed's own route list catches up.
+            custom_value=True,
+            # The options arrive in timetable order (1, 2, 10, 18V, 104A), which
+            # sorting them as text in the frontend would undo.
+            sort=False,
+        )
+    )
+
+
+def _settings_schema(
+    modes: list[str],
+    interval: int,
+    routes: list[str],
+    selected_routes: list[str],
+) -> vol.Schema:
+    """Return the schema for the mode / route / interval step."""
     return vol.Schema(
         {
             vol.Required(CONF_MODES, default=modes): MODES_SELECTOR,
+            vol.Optional(CONF_ROUTES, default=list(selected_routes)): _routes_selector(
+                routes
+            ),
             vol.Required(CONF_SCAN_INTERVAL, default=interval): INTERVAL_SELECTOR,
         }
     )
@@ -273,6 +307,7 @@ class PeatusConfigFlow(ConfigFlow, domain=DOMAIN):
                 },
                 options={
                     CONF_MODES: user_input[CONF_MODES],
+                    CONF_ROUTES: user_input.get(CONF_ROUTES) or [],
                     CONF_SCAN_INTERVAL: int(user_input[CONF_SCAN_INTERVAL]),
                 },
             )
@@ -280,7 +315,10 @@ class PeatusConfigFlow(ConfigFlow, domain=DOMAIN):
         default_modes = _default_modes(self._origin.vehicle_mode)
         return self.async_show_form(
             step_id="settings",
-            data_schema=_settings_schema(default_modes, DEFAULT_SCAN_INTERVAL),
+            data_schema=_settings_schema(
+                default_modes, DEFAULT_SCAN_INTERVAL, self._origin.routes, []
+            ),
+            description_placeholders={"stop": self._origin.name},
         )
 
     async def _async_search(self, name: str) -> dict[str, str]:
@@ -313,7 +351,7 @@ class PeatusConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class PeatusOptionsFlow(OptionsFlow):
-    """Allow changing modes and the poll interval after setup."""
+    """Allow changing modes, route filters and the poll interval after setup."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -323,15 +361,43 @@ class PeatusOptionsFlow(OptionsFlow):
             return self.async_create_entry(
                 data={
                     CONF_MODES: user_input[CONF_MODES],
+                    CONF_ROUTES: user_input.get(CONF_ROUTES) or [],
                     CONF_SCAN_INTERVAL: int(user_input[CONF_SCAN_INTERVAL]),
                 }
             )
 
         options = self.config_entry.options
+        selected = list(options.get(CONF_ROUTES) or [])
         return self.async_show_form(
             step_id="init",
             data_schema=_settings_schema(
                 list(options.get(CONF_MODES) or SUPPORTED_MODES),
                 int(options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)),
+                await self._async_routes(selected),
+                selected,
             ),
+            description_placeholders={
+                "stop": self.config_entry.data.get(CONF_STOP_NAME) or ""
+            },
         )
+
+    async def _async_routes(self, selected: list[str]) -> list[str]:
+        """Return the route numbers to offer, including any already selected.
+
+        The stop is re-read rather than taken from the entry, because the lines
+        calling at a stop change whenever the timetable does. A selected route
+        that has since been withdrawn is still offered, so that reopening the
+        options does not silently drop it from the filter.
+        """
+        routes = list(selected)
+        try:
+            stop = await PeatusApi(async_get_clientsession(self.hass)).async_get_stop(
+                self.config_entry.data[CONF_STOP_ID]
+            )
+        except PeatusApiError as err:
+            # Not worth failing the form over: the settings that do not depend
+            # on the feed are still editable, and the saved filter is kept.
+            _LOGGER.debug("Could not list routes for the options form: %s", err)
+        else:
+            routes += [route for route in stop.routes if route not in routes]
+        return sorted(routes, key=route_sort_key)

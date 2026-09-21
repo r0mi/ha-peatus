@@ -42,6 +42,7 @@ CONF_STOP_DESC: Final = "stop_desc"
 CONF_DESTINATION_ID: Final = "destination_id"
 CONF_DESTINATION_NAME: Final = "destination_name"
 CONF_MODES: Final = "modes"
+CONF_ROUTES: Final = "routes"
 CONF_SEARCH: Final = "search"
 
 #: Transport modes offered to the user. The feed publishes these upper case;

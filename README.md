@@ -23,6 +23,7 @@ Tartu and Pärnu city lines, county buses, Elron trains and ferries.
   to the stop you care about, instead of every service leaving the platform.
 - **Transport mode filter** — bus, trolleybus, tram, train and ferry, including
   trolleybuses that the data source does not label as such (see below).
+- **Optional line filter** — watch only the routes you travel with.
 - **Configurable update interval**, from 1 minute upwards (default 3).
 - Set up entirely from the UI, with stop search or a direct GTFS ID, in English
   and Estonian.
@@ -73,10 +74,19 @@ The config flow walks through four short steps:
 3. **Destination (optional).** Leave it empty for all departures. Enter a stop
    name to keep only the departures whose route continues to that stop *after*
    your departure stop.
-4. **Modes and update interval.** The mode of the stop you picked is preselected.
+4. **Modes, lines and update interval.** The mode of the stop you picked is
+   preselected. **Lines** is optional: leave it empty for every route calling
+   at the stop, or pick just the ones you travel with.
 
-Modes and the update interval can be changed later via the integration's
+Modes, lines and the update interval can be changed later via the integration's
 **Configure** button. Changing the stop or destination means adding a new entry.
+
+Lines are matched by route number rather than by the data source's route ID,
+because the feed carries a separate route per timetable period — around a
+schedule change the same line exists twice, as `… (kuni 20.09)` and
+`… (al 21.09)`. Filtering on the number keeps working across those changes; a
+line withdrawn from the timetable altogether stays in the filter until you
+remove it.
 
 ## Entities
 
@@ -265,6 +275,13 @@ without saying so. The geocoder only identifies stops, so the matches are
 hydrated from the feed in one batch to recover their modes and routes. If the
 geocoder cannot be reached, the search falls back to `stops(name:)` with the
 query reduced to bare terms.
+
+A line filter is applied to the fetched departures, since the API has no route
+argument on any of its stoptimes fields. The request grows the same way a mode
+filter's does, so the cost depends on how often your lines run: filtering a busy
+stop down to its four frequent lines fills all ten sensors from the second
+request, while picking a rarely served line at the same stop has to fetch the
+full 150-departure window to find ten of them.
 
 Destination filtering is done by **route pattern**, not by walking every trip's
 stop list on each poll: the set of patterns that reach your destination after

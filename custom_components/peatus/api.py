@@ -153,6 +153,21 @@ query Departures($id: String!, $count: Int!, $timeRange: Int!) {
 _QUERY_OPERATORS = re.compile(r"[\W_]+", re.UNICODE)
 
 
+def route_sort_key(short_name: str) -> tuple[int, str, int, str]:
+    """Return a sort key ordering route numbers the way a timetable does.
+
+    Route names are a mix of numbers and letters ("1", "18", "119", "18V",
+    "S12", "T3"). Sorting them as plain text puts 119 before 18, so the digits
+    are compared as a number and any prefix or suffix as text around it.
+    """
+    match = re.fullmatch(r"(\D*)(\d+)(.*)", short_name.strip())
+    if match is None:
+        # No digits to compare: order these after the numbered routes.
+        return (1, short_name.casefold(), 0, "")
+    prefix, digits, suffix = match.groups()
+    return (0, prefix.casefold(), int(digits), suffix.casefold())
+
+
 def _gtfs_id_from_feature(raw: dict[str, Any]) -> str | None:
     """Return the GTFS ID of a geocoder stop feature, or ``None`` if it has none.
 
@@ -249,7 +264,8 @@ class PeatusApi:
                     route["shortName"]
                     for route in (raw.get("routes") or [])
                     if route.get("shortName")
-                }
+                },
+                key=route_sort_key,
             ),
         )
 

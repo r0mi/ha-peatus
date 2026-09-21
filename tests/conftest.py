@@ -34,6 +34,7 @@ def make_departure(
     mode: str = "tram",
     pattern: str = "p1",
     long_name: str = "Tondi - Kadriorg",
+    route: str = "T3",
 ) -> Departure:
     """Build a Departure ``offset`` seconds after a fixed epoch."""
     base = 1789506000
@@ -44,7 +45,7 @@ def make_departure(
         realtime_state="UPDATED",
         delay_seconds=0,
         headsign="Tondi",
-        route_short_name="T3",
+        route_short_name=route,
         route_long_name=long_name,
         mode=mode,
         trip_id=f"estonia:{offset}",

@@ -45,9 +45,10 @@
       },
       "settings": {
         "title": "Tabloo seaded",
-        "description": "Näidatakse ainult valitud transpordiliike. Tallinna trollibussiliinid on andmeallikas avaldatud bussidena, seetõttu on need siin eraldi välja toodud. Tihedamini kui kord minutis küsimine ei anna lisainfot, sest sõiduplaani andmed ei uuene kiiremini.",
+        "description": "Näidatakse ainult valitud transpordiliike. Tallinna trollibussiliinid on andmeallikas avaldatud bussidena, seetõttu on need siin eraldi välja toodud. Jäta liinid tühjaks, et näha kõiki peatuses {stop} peatuvaid liine, või vali need, millega sõidad — harva käiva liini filtreerimisel tuleb igal uuendusel rohkem väljumisi pärida, et neid piisavalt leida. Tihedamini kui kord minutis küsimine ei anna lisainfot, sest sõiduplaani andmed ei uuene kiiremini.",
         "data": {
           "modes": "Transpordiliigid",
+          "routes": "Liinid",
           "scan_interval": "Uuendamise intervall"
         }
       }
@@ -68,9 +69,10 @@
         "title": "Tabloo seaded",
         "data": {
           "modes": "Transpordiliigid",
+          "routes": "Liinid",
           "scan_interval": "Uuendamise intervall"
         },
-        "description": "Näidatakse ainult valitud transpordiliike. Tallinna trollibussiliinid on andmeallikas avaldatud bussidena, seetõttu on need siin eraldi välja toodud. Tihedamini kui kord minutis küsimine ei anna lisainfot, sest sõiduplaani andmed ei uuene kiiremini."
+        "description": "Näidatakse ainult valitud transpordiliike. Tallinna trollibussiliinid on andmeallikas avaldatud bussidena, seetõttu on need siin eraldi välja toodud. Jäta liinid tühjaks, et näha kõiki peatuses {stop} peatuvaid liine, või vali need, millega sõidad — harva käiva liini filtreerimisel tuleb igal uuendusel rohkem väljumisi pärida, et neid piisavalt leida. Tihedamini kui kord minutis küsimine ei anna lisainfot, sest sõiduplaani andmed ei uuene kiiremini."
       }
     }
   },

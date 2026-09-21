@@ -16,6 +16,7 @@ from .api import Departure, PeatusApi, PeatusApiError
 from .const import (
     CONF_DESTINATION_ID,
     CONF_MODES,
+    CONF_ROUTES,
     CONF_STOP_ID,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -30,7 +31,7 @@ _LOGGER = logging.getLogger(__name__)
 #: needed keeps the unfiltered case at a couple of kilobytes per poll, while a
 #: destination filter starts larger because it usually discards most results.
 _FETCH_STEPS_PLAIN = (NUM_DEPARTURES,)
-_FETCH_STEPS_MODE = (NUM_DEPARTURES, 60, 150)
+_FETCH_STEPS_FILTERED = (NUM_DEPARTURES, 60, 150)
 _FETCH_STEPS_DESTINATION = (60, 150, 300)
 
 type PeatusConfigEntry = ConfigEntry[PeatusCoordinator]
@@ -67,12 +68,20 @@ class PeatusCoordinator(DataUpdateCoordinator[list[Departure]]):
         return list(configured) if configured else list(SUPPORTED_MODES)
 
     @property
+    def routes(self) -> list[str]:
+        """Return the route numbers the user wants to see, empty for all."""
+        configured = self.config_entry.options.get(
+            CONF_ROUTES, self.config_entry.data.get(CONF_ROUTES)
+        )
+        return list(configured) if configured else []
+
+    @property
     def _fetch_steps(self) -> tuple[int, ...]:
         """Return the departure counts to request, smallest first."""
         if self.destination_id is not None:
             return _FETCH_STEPS_DESTINATION
-        if set(self.modes) != set(SUPPORTED_MODES):
-            return _FETCH_STEPS_MODE
+        if self.routes or set(self.modes) != set(SUPPORTED_MODES):
+            return _FETCH_STEPS_FILTERED
         return _FETCH_STEPS_PLAIN
 
     async def _async_pattern_codes(self) -> set[str]:
@@ -98,11 +107,17 @@ class PeatusCoordinator(DataUpdateCoordinator[list[Departure]]):
     def _filter(
         self, departures: list[Departure], codes: set[str] | None
     ) -> list[Departure]:
-        """Apply the destination and mode filters to fetched departures."""
+        """Apply the destination, route and mode filters to fetched departures."""
         modes = set(self.modes)
+        # Matched by route number rather than route ID: the feed carries a
+        # separate route per timetable period, so the same line changes ID
+        # whenever the schedule is revised while its number stays put.
+        routes = set(self.routes)
         result = []
         for departure in departures:
             if codes is not None and departure.pattern_code not in codes:
+                continue
+            if routes and departure.route_short_name not in routes:
                 continue
             # Departures whose mode the feed does not report are kept, so an
             # incomplete feed never silently empties the sensors.

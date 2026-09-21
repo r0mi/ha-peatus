@@ -45,9 +45,10 @@
       },
       "settings": {
         "title": "Departure board settings",
-        "description": "Only the selected transport modes are shown. Tallinn's trolleybus routes are published as buses by the data source, so they are listed separately here. Polling more often than once a minute is not useful, as the timetable data does not change faster than that.",
+        "description": "Only the selected transport modes are shown. Tallinn's trolleybus routes are published as buses by the data source, so they are listed separately here. Leave the lines empty to show every route calling at {stop}, or pick the ones you travel with — filtering to a rarely served line makes each update fetch more departures to find enough of them. Polling more often than once a minute is not useful, as the timetable data does not change faster than that.",
         "data": {
           "modes": "Transport modes",
+          "routes": "Lines",
           "scan_interval": "Update interval"
         }
       }
@@ -68,9 +69,10 @@
         "title": "Departure board settings",
         "data": {
           "modes": "Transport modes",
+          "routes": "Lines",
           "scan_interval": "Update interval"
         },
-        "description": "Only the selected transport modes are shown. Tallinn's trolleybus routes are published as buses by the data source, so they are listed separately here. Polling more often than once a minute is not useful, as the timetable data does not change faster than that."
+        "description": "Only the selected transport modes are shown. Tallinn's trolleybus routes are published as buses by the data source, so they are listed separately here. Leave the lines empty to show every route calling at {stop}, or pick the ones you travel with — filtering to a rarely served line makes each update fetch more departures to find enough of them. Polling more often than once a minute is not useful, as the timetable data does not change faster than that."
       }
     }
   },

@@ -10,6 +10,7 @@ from custom_components.peatus.api import PeatusApiError, PeatusStopNotFoundError
 from custom_components.peatus.const import (
     CONF_DESTINATION_ID,
     CONF_MODES,
+    CONF_ROUTES,
     CONF_STOP_DESC,
     CONF_STOP_ID,
     CONF_STOP_MODE,
@@ -79,7 +80,12 @@ async def test_search_flow_without_destination(
     assert result["data"][CONF_STOP_MODE] == "tram"
     assert result["data"][CONF_STOP_DESC] == "Rong Balti jaama suunas"
     assert result["data"][CONF_DESTINATION_ID] is None
-    assert result["options"] == {CONF_MODES: ["tram"], CONF_SCAN_INTERVAL: 2}
+    # No lines picked, so the filter stays empty and every route is shown.
+    assert result["options"] == {
+        CONF_MODES: ["tram"],
+        CONF_ROUTES: [],
+        CONF_SCAN_INTERVAL: 2,
+    }
 
 
 async def test_search_flow_with_destination(hass: HomeAssistant, api, no_setup) -> None:

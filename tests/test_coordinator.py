@@ -11,6 +11,7 @@ from custom_components.peatus.api import PeatusApiError
 from custom_components.peatus.const import (
     CONF_DESTINATION_ID,
     CONF_MODES,
+    CONF_ROUTES,
     CONF_STOP_ID,
     DOMAIN,
     NUM_DEPARTURES,
@@ -28,6 +29,7 @@ def build_coordinator(
     *,
     destination: str | None = None,
     modes: list[str] | None = None,
+    routes: list[str] | None = None,
 ) -> tuple[PeatusCoordinator, AsyncMock]:
     """Create a coordinator with a mocked API client."""
     entry = MockConfigEntry(
@@ -35,6 +37,7 @@ def build_coordinator(
         data={CONF_STOP_ID: "estonia:1292", CONF_DESTINATION_ID: destination},
         options={
             CONF_MODES: modes or ["bus", "tram", "rail", "ferry"],
+            CONF_ROUTES: routes or [],
             CONF_SCAN_INTERVAL: 1,
         },
     )
@@ -192,3 +195,77 @@ async def test_api_error_becomes_update_failed(hass: HomeAssistant) -> None:
 
     with pytest.raises(UpdateFailed):
         await coordinator._async_update_data()
+
+
+async def test_route_filter_drops_other_routes(hass: HomeAssistant) -> None:
+    """Only the selected lines are shown."""
+    coordinator, api = build_coordinator(hass, routes=["1", "10"])
+    api.async_get_departures = AsyncMock(
+        return_value=[
+            make_departure(60, route="1"),
+            make_departure(120, route="163"),
+            make_departure(180, route="10"),
+            make_departure(240, route="191"),
+        ]
+    )
+
+    data = await coordinator._async_update_data()
+
+    assert [departure.route_short_name for departure in data] == ["1", "10"]
+
+
+async def test_route_filter_matches_the_number_not_the_route_id(
+    hass: HomeAssistant,
+) -> None:
+    """Both routes sharing a number match, as they are one line to the rider.
+
+    The feed publishes a separate route per timetable period, so around a
+    schedule change the same line appears under two IDs and one number.
+    """
+    coordinator, api = build_coordinator(hass, routes=["1"])
+    api.async_get_departures = AsyncMock(
+        return_value=[
+            make_departure(60, route="1", long_name="Vana-Pääsküla (kuni 20.09)"),
+            make_departure(120, route="1", long_name="Vana-Pääsküla (al 21.09)"),
+        ]
+    )
+
+    data = await coordinator._async_update_data()
+
+    assert len(data) == 2
+
+
+async def test_empty_route_filter_shows_every_route(hass: HomeAssistant) -> None:
+    """An empty line filter is not a filter, so nothing is discarded."""
+    coordinator, api = build_coordinator(hass, routes=[])
+    api.async_get_departures = AsyncMock(
+        return_value=[make_departure(60, route=str(i)) for i in range(NUM_DEPARTURES)]
+    )
+
+    data = await coordinator._async_update_data()
+
+    assert len(data) == NUM_DEPARTURES
+    # Unfiltered, so the smallest request is still enough.
+    api.async_get_departures.assert_awaited_once_with("estonia:1292", NUM_DEPARTURES)
+
+
+async def test_route_filter_grows_the_request(hass: HomeAssistant) -> None:
+    """A rarely served line makes the request grow until enough are found."""
+    coordinator, api = build_coordinator(hass, routes=["8"])
+
+    def departures(_stop_id: str, count: int):
+        # One in ten departures is the wanted line, so the first batch of ten
+        # yields a single match and the request has to grow.
+        return [
+            make_departure(60 * i, route="8" if i % 10 == 0 else "5")
+            for i in range(count)
+        ]
+
+    api.async_get_departures = AsyncMock(side_effect=departures)
+
+    data = await coordinator._async_update_data()
+
+    assert len(data) == NUM_DEPARTURES
+    assert {departure.route_short_name for departure in data} == {"8"}
+    requested = [call.args[1] for call in api.async_get_departures.await_args_list]
+    assert requested == [NUM_DEPARTURES, 60, 150]
