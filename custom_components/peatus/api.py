@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
@@ -168,6 +169,25 @@ def route_sort_key(short_name: str) -> tuple[int, str, int, str]:
     return (0, prefix.casefold(), int(digits), suffix.casefold())
 
 
+def _feature_id(raw: dict[str, Any]) -> str:
+    """Return a geocoder feature's own ID, e.g. ``GTFS:estonia:952#04401-1``."""
+    return str((raw.get("properties") or {}).get("id") or "")
+
+
+def _feature_stop_name(raw: dict[str, Any]) -> str:
+    """Return a geocoder feature's stop name without its platform code.
+
+    Features are named "Järve 06804-1": the stop name with the same platform
+    code that the feature's ID carries after the fragment marker. Trimming it
+    off leaves the name the platforms of one stop share.
+    """
+    name = str((raw.get("properties") or {}).get("name") or "")
+    _, _, code = _feature_id(raw).partition("#")
+    if code and name.endswith(f" {code}"):
+        return name[: -len(code) - 1]
+    return name
+
+
 def _gtfs_id_from_feature(raw: dict[str, Any]) -> str | None:
     """Return the GTFS ID of a geocoder stop feature, or ``None`` if it has none.
 
@@ -282,7 +302,7 @@ class PeatusApi:
         the feed to recover the modes and routes the picker labels them with.
         """
         try:
-            features = await self._geocode(name)
+            features = await self._async_geocode(name)
         except PeatusApiError as err:
             _LOGGER.debug("Geocoder unreachable, falling back to name search: %s", err)
             return await self._async_search_stops_by_name(name)
@@ -304,13 +324,46 @@ class PeatusApi:
 
         return await self._async_hydrate_stops(localities)
 
-    async def _geocode(self, name: str) -> list[dict[str, Any]]:
-        """Return the geocoder's stop features for a (partial) name."""
-        payload = await self._get(
-            GEOCODER_URL,
-            {"text": name, "size": SEARCH_LIMIT, "layers": "stop"},
+    async def _async_geocode(self, name: str) -> list[dict[str, Any]]:
+        """Return the geocoder's stop features for a (partial) name.
+
+        Both of the geocoder's endpoints are needed, because each is wrong on
+        its own for a stop picker. ``autocomplete`` ranks partial input well but
+        keeps only one platform per stop name and locality, which hides the rest
+        of an interchange: searching "Järve" offers one of the four platforms in
+        Tallinn, so the train to Paldiski is listed and the one back is not.
+        ``search`` has every platform but pads its answer out with whatever else
+        starts alike, burying them among names the user did not ask for.
+
+        So the shortlist comes from ``autocomplete``, and ``search`` is used
+        only to put back the platforms it collapsed: a stop is added when its
+        name already appears in the shortlist, and never otherwise.
+        """
+        params = {"text": name, "size": SEARCH_LIMIT, "layers": "stop"}
+        shortlist, complete = await asyncio.gather(
+            self._get(f"{GEOCODER_URL}/autocomplete", params),
+            self._get(f"{GEOCODER_URL}/search", params),
+            return_exceptions=True,
         )
-        return payload.get("features") or []
+        if isinstance(shortlist, BaseException):
+            raise shortlist
+
+        features: list[dict[str, Any]] = shortlist.get("features") or []
+        if isinstance(complete, BaseException):
+            # A shortlist missing some platforms still beats no answer at all.
+            _LOGGER.debug("Could not complete the geocoder shortlist: %s", complete)
+            return features
+
+        names = {_feature_stop_name(feature) for feature in features}
+        seen = {_feature_id(feature) for feature in features}
+        for feature in complete.get("features") or []:
+            if (
+                _feature_stop_name(feature) in names
+                and _feature_id(feature) not in seen
+            ):
+                seen.add(_feature_id(feature))
+                features.append(feature)
+        return features
 
     async def _async_hydrate_stops(
         self, localities: dict[str, str | None]

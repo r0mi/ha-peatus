@@ -266,15 +266,24 @@ The integration queries the OpenTripPlanner GraphQL endpoint at
 required.
 
 Stop search goes through the Pelias geocoder at
-`https://api.peatus.ee/geocoding/v1/autocomplete`, the same one web.peatus.ee
-searches with, rather than OpenTripPlanner's `stops(name:)` field. That field
-parses its argument as Lucene, so punctuation acts as an operator instead of
-text to match — a hyphen reads as NOT, which makes hyphenated names like
-`Vana-Pääsküla` match nothing — and it truncates every answer to ten stops
-without saying so. The geocoder only identifies stops, so the matches are
-hydrated from the feed in one batch to recover their modes and routes. If the
-geocoder cannot be reached, the search falls back to `stops(name:)` with the
-query reduced to bare terms.
+`https://api.peatus.ee/geocoding/v1`, the same one web.peatus.ee searches with,
+rather than OpenTripPlanner's `stops(name:)` field. That field parses its
+argument as Lucene, so punctuation acts as an operator instead of text to match
+— a hyphen reads as NOT, which makes hyphenated names like `Vana-Pääsküla`
+match nothing — and it truncates every answer to ten stops without saying so.
+
+Both geocoder endpoints are used, because neither is right alone for a stop
+picker. `/autocomplete` ranks partial input well, but keeps only one platform
+per stop name and locality: searching `Järve` offers one of the four platforms
+in Tallinn, so the train towards Paldiski is listed and the one back is not.
+`/search` has every platform, but pads its answer out with whatever else starts
+alike. So the shortlist comes from `/autocomplete`, and `/search` is used only
+to put back the platforms it collapsed — a stop is added when its name is
+already in the shortlist, never otherwise.
+
+The geocoder only identifies stops, so the matches are hydrated from the feed in
+one batch to recover their modes and routes. If the geocoder cannot be reached,
+the search falls back to `stops(name:)` with the query reduced to bare terms.
 
 A line filter is applied to the fetched departures, since the API has no route
 argument on any of its stoptimes fields. The request grows the same way a mode

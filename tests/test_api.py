@@ -8,6 +8,7 @@ from aiohttp import ClientError
 from custom_components.peatus.api import (
     PeatusApi,
     _classify_mode,
+    _feature_stop_name,
     _gtfs_id_from_feature,
     route_sort_key,
 )
@@ -30,16 +31,26 @@ class FakeSession:
     """Records what the client requests and replays canned answers."""
 
     def __init__(self) -> None:
-        self.geocoder_response = {"features": []}
+        # The geocoder's two endpoints answer separately: autocomplete ranks
+        # the shortlist, search fills the platforms it collapsed back in.
+        self.autocomplete_response = {"features": []}
+        self.search_response = {"features": []}
         self.graphql_response = {"data": {}}
         self.get_params = None
+        self.get_urls: list[str] = []
         self.posted = None
 
     async def get(self, url, params=None, timeout=None):  # noqa: ASYNC109
         self.get_params = params
-        if isinstance(self.geocoder_response, Exception):
-            raise self.geocoder_response
-        return FakeResponse(self.geocoder_response)
+        self.get_urls.append(url)
+        response = (
+            self.search_response
+            if url.endswith("/search")
+            else self.autocomplete_response
+        )
+        if isinstance(response, Exception):
+            raise response
+        return FakeResponse(response)
 
     async def post(self, url, json=None, headers=None, timeout=None):  # noqa: ASYNC109
         self.posted = json
@@ -135,7 +146,7 @@ def test_label_includes_locality() -> None:
 
 async def test_search_stops_uses_geocoder(api, session) -> None:
     """Stops are searched through the geocoder and hydrated from the feed."""
-    session.geocoder_response = {
+    session.autocomplete_response = {
         "features": [_feature("estonia:952", "04401-1"), _feature("estonia:953", "x")]
     }
     session.graphql_response = {
@@ -159,7 +170,7 @@ async def test_search_stops_uses_geocoder(api, session) -> None:
 
 async def test_search_stops_skips_unknown_and_duplicate_ids(api, session) -> None:
     """A stop the geocoder lists but the feed does not know is dropped."""
-    session.geocoder_response = {
+    session.autocomplete_response = {
         "features": [
             _feature("estonia:952", "04401-1"),
             # The same stop indexed a second time under another name.
@@ -186,7 +197,7 @@ async def test_search_stops_skips_unknown_and_duplicate_ids(api, session) -> Non
 
 
 @pytest.mark.parametrize(
-    "geocoder_outcome",
+    "autocomplete_outcome",
     [
         # The geocoder is indexed separately from the feed, so an empty answer
         # is worth a second try rather than reported as "no such stop".
@@ -196,10 +207,10 @@ async def test_search_stops_skips_unknown_and_duplicate_ids(api, session) -> Non
     ],
 )
 async def test_search_stops_falls_back_to_name_search(
-    api, session, geocoder_outcome
+    api, session, autocomplete_outcome
 ) -> None:
     """Without a geocoder answer the feed's own name index is used instead."""
-    session.geocoder_response = geocoder_outcome
+    session.autocomplete_response = autocomplete_outcome
     session.graphql_response = {
         "data": {"stops": [{"gtfsId": "estonia:952", "name": "Vana-Pääsküla"}]}
     }
@@ -214,7 +225,7 @@ async def test_search_stops_falls_back_to_name_search(
 
 async def test_search_stops_skips_name_search_without_terms(api, session) -> None:
     """A query of pure punctuation has nothing left to search the feed with."""
-    session.geocoder_response = {"features": []}
+    session.autocomplete_response = {"features": []}
 
     assert await api.async_search_stops(" -- ") == []
     assert session.posted is None
@@ -249,3 +260,95 @@ def test_parse_stop_orders_routes_naturally() -> None:
         }
     )
     assert stop.routes == ["1", "10", "18", "119", "191"]
+
+
+def _named_feature(gtfs_id: str, name: str, code: str):
+    """Build a stop feature named the way the geocoder names one."""
+    return {
+        "properties": {
+            "id": f"GTFS:{gtfs_id}#{code}",
+            "layer": "stop",
+            "name": f"{name} {code}",
+            "locality": "Tallinna linn, Kristiine",
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (_named_feature("estonia:10416", "Järve", "06804-1"), "Järve"),
+        # A stop with no code is named by itself.
+        (
+            {"properties": {"id": "GTFS:estonia:1", "name": "Järve"}},
+            "Järve",
+        ),
+        # A name that merely ends in something code-shaped is left alone.
+        (
+            {"properties": {"id": "GTFS:estonia:1#06804-1", "name": "Balti jaam 2"}},
+            "Balti jaam 2",
+        ),
+        ({}, ""),
+    ],
+)
+def test_feature_stop_name(raw, expected) -> None:
+    """The platform code the feature's ID carries is trimmed off its name."""
+    assert _feature_stop_name(raw) == expected
+
+
+async def test_search_recovers_platforms_autocomplete_collapsed(api, session) -> None:
+    """Sibling platforms hidden by the shortlist are put back.
+
+    Autocomplete keeps one platform per stop name and locality, so searching
+    "Järve" offers the train towards Paldiski but not the one back.
+    """
+    session.autocomplete_response = {
+        "features": [_named_feature("estonia:10415", "Järve", "06805-1")]
+    }
+    session.search_response = {
+        "features": [
+            _named_feature("estonia:10415", "Järve", "06805-1"),
+            _named_feature("estonia:10416", "Järve", "06804-1"),
+            _named_feature("estonia:1053", "Järve", "06801-1"),
+            # A different stop that merely starts alike is not asked for.
+            _named_feature("estonia:999", "Järveküla", "12345-1"),
+        ]
+    }
+    session.graphql_response = {
+        "data": {
+            "stops": [
+                {"gtfsId": "estonia:10415", "name": "Järve"},
+                {"gtfsId": "estonia:10416", "name": "Järve"},
+                {"gtfsId": "estonia:1053", "name": "Järve"},
+            ]
+        }
+    }
+
+    stops = await api.async_search_stops("Järve")
+
+    assert [stop.gtfs_id for stop in stops] == [
+        "estonia:10415",
+        "estonia:10416",
+        "estonia:1053",
+    ]
+    # Both endpoints are asked, and the shortlist still leads.
+    assert sorted(url.rsplit("/", 1)[-1] for url in session.get_urls) == [
+        "autocomplete",
+        "search",
+    ]
+    assert "estonia:999" not in session.posted["variables"]["ids"]
+
+
+async def test_search_keeps_shortlist_when_completion_fails(api, session) -> None:
+    """A shortlist missing platforms still beats failing the whole search."""
+    session.autocomplete_response = {
+        "features": [_named_feature("estonia:10415", "Järve", "06805-1")]
+    }
+    session.search_response = ClientError("down")
+    session.graphql_response = {
+        "data": {"stops": [{"gtfsId": "estonia:10415", "name": "Järve"}]}
+    }
+
+    stops = await api.async_search_stops("Järve")
+
+    assert [stop.gtfs_id for stop in stops] == ["estonia:10415"]
