@@ -162,6 +162,16 @@ matching departures than 10, which is normal at night.
 | `trip_id` | `estonia:14047` | Identifies the scheduled trip; changes if the service is replaced |
 | `stop`, `stop_code`, `stop_id` | `Viru`, `12102-1`, `estonia:1292` | |
 | `destination` | `Vana-Lõuna` | `null` when no destination filter is set |
+| `ride_minutes` | `14` | How long this departure takes to reach the destination |
+| `arrival_time` | `2026-09-16T10:35:00+00:00` | When it gets there |
+
+`ride_minutes` and `arrival_time` are only present when a destination is
+configured, and are omitted for a departure whose ride the feed cannot measure.
+The ride length is the scheduled one for that specific trip, which matters
+because it is not constant along a line: bus 1 from Vana-Pääsküla to Viru takes
+24 minutes off-peak and 34 at rush hour. The arrival is measured from the
+*realtime* departure, so a service already running late arrives late too;
+delay picked up during the ride itself is not reflected.
 
 > **`minutes_until` is only refreshed when the sensor polls.** For a live
 > countdown, use the state instead — Home Assistant's UI already renders a
@@ -210,7 +220,7 @@ automation:
 
 ## Example dashboard card
 
-Show the next three departures
+Show the next three departures, with when each one gets you there
 
 ```yaml
 type: entities
@@ -224,6 +234,12 @@ entities:
     state: >-
       {% set dt = states(config.entity) | as_datetime %}
       {{ 'departing' if dt is none or dt <= now() else time_until(dt) }}
+    secondary: >-
+      {% set arrival = state_attr(config.entity, 'arrival_time') %}
+      {% if arrival %}
+        arrives {{ (arrival | as_datetime | as_local).strftime('%H:%M') }}
+        ({{ state_attr(config.entity, 'ride_minutes') }} min)
+      {% endif %}
   - entity: sensor.peatus_viru_departure_2
     type: custom:template-entity-row
     name: >
@@ -232,6 +248,12 @@ entities:
     state: >-
       {% set dt = states(config.entity) | as_datetime %}
       {{ 'departing' if dt is none or dt <= now() else time_until(dt) }}
+    secondary: >-
+      {% set arrival = state_attr(config.entity, 'arrival_time') %}
+      {% if arrival %}
+        arrives {{ (arrival | as_datetime | as_local).strftime('%H:%M') }}
+        ({{ state_attr(config.entity, 'ride_minutes') }} min)
+      {% endif %}
   - entity: sensor.peatus_viru_departure_3
     type: custom:template-entity-row
     name: >
@@ -240,6 +262,12 @@ entities:
     state: >-
       {% set dt = states(config.entity) | as_datetime %}
       {{ 'departing' if dt is none or dt <= now() else time_until(dt) }}
+    secondary: >-
+      {% set arrival = state_attr(config.entity, 'arrival_time') %}
+      {% if arrival %}
+        arrives {{ (arrival | as_datetime | as_local).strftime('%H:%M') }}
+        ({{ state_attr(config.entity, 'ride_minutes') }} min)
+      {% endif %}
 ```
 
 A plain `entities` card works too — Home Assistant renders timestamp sensors as

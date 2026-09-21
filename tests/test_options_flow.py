@@ -30,6 +30,7 @@ def api_fixture():
             return_value=[make_departure(60), make_departure(120, mode="bus")]
         )
         client.async_get_pattern_codes_to = AsyncMock(return_value=set())
+        client.async_get_ride_seconds = AsyncMock(return_value={})
         yield client
 
 

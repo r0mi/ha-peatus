@@ -15,6 +15,7 @@ from custom_components.peatus.const import (
     CONF_STOP_ID,
     DOMAIN,
     NUM_DEPARTURES,
+    PATTERN_CACHE_TTL,
 )
 from custom_components.peatus.coordinator import PeatusCoordinator
 from homeassistant.const import CONF_SCAN_INTERVAL
@@ -44,7 +45,9 @@ def build_coordinator(
     entry.add_to_hass(hass)
     with patch("custom_components.peatus.coordinator.PeatusApi") as mock:
         coordinator = PeatusCoordinator(hass, entry)
-    return coordinator, mock.return_value
+    api = mock.return_value
+    api.async_get_ride_seconds = AsyncMock(return_value={})
+    return coordinator, api
 
 
 async def test_unfiltered_requests_only_what_is_needed(hass: HomeAssistant) -> None:
@@ -269,3 +272,85 @@ async def test_route_filter_grows_the_request(hass: HomeAssistant) -> None:
     assert {departure.route_short_name for departure in data} == {"8"}
     requested = [call.args[1] for call in api.async_get_departures.await_args_list]
     assert requested == [NUM_DEPARTURES, 60, 150]
+
+
+async def test_ride_lengths_are_attached_to_departures(hass: HomeAssistant) -> None:
+    """With a destination each departure carries how long the ride takes."""
+    coordinator, api = build_coordinator(hass, destination="estonia:1256")
+    api.async_get_pattern_codes_to = AsyncMock(return_value={"good"})
+    api.async_get_departures = AsyncMock(
+        return_value=[make_departure(60, pattern="good")]
+    )
+    api.async_get_ride_seconds = AsyncMock(return_value={"estonia:60": 840})
+
+    data = await coordinator._async_update_data()
+
+    assert data[0].ride_seconds == 840
+    api.async_get_ride_seconds.assert_awaited_once_with(
+        ["estonia:60"], "estonia:1292", "estonia:1256"
+    )
+
+
+async def test_ride_lengths_are_not_fetched_without_a_destination(
+    hass: HomeAssistant,
+) -> None:
+    """Without a destination there is no ride to measure."""
+    coordinator, api = build_coordinator(hass)
+    api.async_get_departures = AsyncMock(return_value=[make_departure(60)])
+
+    data = await coordinator._async_update_data()
+
+    assert data[0].ride_seconds is None
+    api.async_get_ride_seconds.assert_not_awaited()
+
+
+async def test_ride_lengths_are_cached_between_updates(hass: HomeAssistant) -> None:
+    """A trip already measured is not looked up again on the next poll."""
+    coordinator, api = build_coordinator(hass, destination="estonia:1256")
+    api.async_get_pattern_codes_to = AsyncMock(return_value={"good"})
+    api.async_get_departures = AsyncMock(
+        return_value=[make_departure(60, pattern="good")]
+    )
+    api.async_get_ride_seconds = AsyncMock(return_value={"estonia:60": 840})
+
+    await coordinator._async_update_data()
+    data = await coordinator._async_update_data()
+
+    assert data[0].ride_seconds == 840
+    assert api.async_get_ride_seconds.await_count == 1
+
+
+async def test_ride_lengths_are_dropped_with_the_pattern_cache(
+    hass: HomeAssistant,
+) -> None:
+    """Rereading the timetable rereads the ride lengths with it."""
+    coordinator, api = build_coordinator(hass, destination="estonia:1256")
+    api.async_get_pattern_codes_to = AsyncMock(return_value={"good"})
+    api.async_get_departures = AsyncMock(
+        return_value=[make_departure(60, pattern="good")]
+    )
+    api.async_get_ride_seconds = AsyncMock(return_value={"estonia:60": 840})
+
+    await coordinator._async_update_data()
+    # Age the pattern cache past its TTL, as a timetable change would.
+    coordinator._pattern_codes_fetched -= PATTERN_CACHE_TTL + 1
+    await coordinator._async_update_data()
+
+    assert api.async_get_ride_seconds.await_count == 2
+
+
+async def test_departure_without_a_known_ride_length_is_still_shown(
+    hass: HomeAssistant,
+) -> None:
+    """A trip the feed cannot measure keeps its place on the board."""
+    coordinator, api = build_coordinator(hass, destination="estonia:1256")
+    api.async_get_pattern_codes_to = AsyncMock(return_value={"good"})
+    api.async_get_departures = AsyncMock(
+        return_value=[make_departure(60, pattern="good")]
+    )
+    api.async_get_ride_seconds = AsyncMock(return_value={})
+
+    data = await coordinator._async_update_data()
+
+    assert len(data) == 1
+    assert data[0].ride_seconds is None

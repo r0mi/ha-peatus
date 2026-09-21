@@ -91,6 +91,9 @@ class Departure:
     mode: str | None
     trip_id: str | None
     pattern_code: str | None
+    #: Scheduled seconds from this stop to the configured destination, set once
+    #: the coordinator has resolved it. ``None`` without a destination.
+    ride_seconds: int | None = None
 
 
 _STOP_FIELDS = "gtfsId name code desc zoneId vehicleMode lat lon routes{shortName}"
@@ -112,6 +115,20 @@ query GetStop($id: String!) {{
   stop(id: $id) {{ {_STOP_FIELDS} }}
 }}
 """
+
+#: One aliased lookup per trip, since the feed has no "these trips" field: only
+#: ``trip(id:)`` one at a time, which GraphQL is happy to batch into one request.
+_RIDE_FIELDS = "stoptimes { stop { gtfsId } scheduledDeparture scheduledArrival }"
+
+
+def _rides_query(count: int) -> str:
+    """Return a query fetching the stop times of ``count`` trips at once."""
+    declarations = ", ".join(f"$id{index}: String!" for index in range(count))
+    lookups = " ".join(
+        f"t{index}: trip(id: $id{index}) {{ {_RIDE_FIELDS} }}" for index in range(count)
+    )
+    return f"query Rides({declarations}) {{ {lookups} }}"
+
 
 PATTERNS_QUERY = """
 query StopPatterns($id: String!) {
@@ -202,6 +219,29 @@ def _gtfs_id_from_feature(raw: dict[str, Any]) -> str | None:
     if source.upper() != "GTFS" or not gtfs_id:
         return None
     return gtfs_id.split("#", 1)[0]
+
+
+def _ride_seconds(
+    stoptimes: list[dict[str, Any]], origin_id: str, destination_id: str
+) -> int | None:
+    """Return the scheduled seconds from ``origin_id`` to ``destination_id``.
+
+    A trip can call at the same stop twice, so the destination is looked for
+    after the origin rather than anywhere on the trip, matching how patterns
+    are matched to a destination.
+    """
+    departure: int | None = None
+    for stoptime in stoptimes:
+        gtfs_id = (stoptime.get("stop") or {}).get("gtfsId")
+        if departure is None:
+            if gtfs_id == origin_id:
+                departure = stoptime.get("scheduledDeparture")
+        elif gtfs_id == destination_id:
+            arrival = stoptime.get("scheduledArrival")
+            if arrival is None:
+                return None
+            return arrival - departure
+    return None
 
 
 def _classify_mode(mode: str | None, long_name: str | None) -> str | None:
@@ -422,6 +462,34 @@ class PeatusApi:
             if destination_id in stop_ids[origin_index + 1 :]:
                 codes.add(pattern["code"])
         return codes
+
+    async def async_get_ride_seconds(
+        self, trip_ids: list[str], origin_id: str, destination_id: str
+    ) -> dict[str, int]:
+        """Return the scheduled ride seconds for each of ``trip_ids``.
+
+        Only the scheduled times are read. They never change for a given trip,
+        which is what lets the coordinator cache the answer rather than ask
+        again on every poll; a trip running late still shows through, because
+        the ride is measured from its realtime departure.
+        """
+        if not trip_ids:
+            return {}
+        data = await self._query(
+            _rides_query(len(trip_ids)),
+            {f"id{index}": trip_id for index, trip_id in enumerate(trip_ids)},
+        )
+        rides: dict[str, int] = {}
+        for index, trip_id in enumerate(trip_ids):
+            raw = data.get(f"t{index}")
+            if raw is None:
+                continue
+            seconds = _ride_seconds(
+                raw.get("stoptimes") or [], origin_id, destination_id
+            )
+            if seconds is not None:
+                rides[trip_id] = seconds
+        return rides
 
     async def async_get_departures(self, gtfs_id: str, count: int) -> list[Departure]:
         """Fetch up to ``count`` upcoming departures from a stop."""

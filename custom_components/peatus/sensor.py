@@ -240,4 +240,15 @@ class PeatusDepartureSensor(CoordinatorEntity[PeatusCoordinator], SensorEntity):
             "minutes_until": max(0, int(remaining // 60)),
             "trip_id": departure.trip_id,
         }
+
+        if departure.ride_seconds is not None:
+            arrival = dt_util.utc_from_timestamp(
+                departure.timestamp + departure.ride_seconds
+            )
+            # The ride is scheduled, so a departure already running late carries
+            # its delay over into the arrival rather than losing it.
+            attributes |= {
+                "ride_minutes": round(departure.ride_seconds / 60),
+                "arrival_time": arrival.isoformat(),
+            }
         return attributes

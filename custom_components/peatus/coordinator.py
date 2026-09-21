@@ -50,6 +50,10 @@ class PeatusCoordinator(DataUpdateCoordinator[list[Departure]]):
 
         self._pattern_codes: set[str] | None = None
         self._pattern_codes_fetched: float = 0.0
+        #: Scheduled ride seconds per trip ID. Emptied with the pattern cache,
+        #: since both only change when the timetable does, which also keeps it
+        #: from growing without bound as trips come and go.
+        self._ride_seconds: dict[str, int] = {}
 
         super().__init__(
             hass,
@@ -96,6 +100,7 @@ class PeatusCoordinator(DataUpdateCoordinator[list[Departure]]):
                 self.stop_id, self.destination_id
             )
             self._pattern_codes_fetched = now
+            self._ride_seconds.clear()
             if not self._pattern_codes:
                 _LOGGER.warning(
                     "No route from %s reaches %s; no departures will be shown",
@@ -139,10 +144,34 @@ class PeatusCoordinator(DataUpdateCoordinator[list[Departure]]):
                 # out of departures and a larger request cannot help.
                 if len(matched) >= NUM_DEPARTURES or len(fetched) < count:
                     break
+            departures = matched[:NUM_DEPARTURES]
+            if self.destination_id is not None:
+                await self._async_add_ride_lengths(departures)
         except PeatusApiError as err:
             raise UpdateFailed(str(err)) from err
 
-        return matched[:NUM_DEPARTURES]
+        return departures
+
+    async def _async_add_ride_lengths(self, departures: list[Departure]) -> None:
+        """Fill in how long each departure takes to reach the destination.
+
+        Only the trips not seen since the timetable was last read are looked
+        up, so a board settles into asking for nothing extra: the same trips
+        run again the next day.
+        """
+        assert self.destination_id is not None
+        missing = [
+            departure.trip_id
+            for departure in departures
+            if departure.trip_id is not None
+            and departure.trip_id not in self._ride_seconds
+        ]
+        if missing:
+            self._ride_seconds |= await self.api.async_get_ride_seconds(
+                missing, self.stop_id, self.destination_id
+            )
+        for departure in departures:
+            departure.ride_seconds = self._ride_seconds.get(departure.trip_id)
 
 
 def _scan_interval(entry: PeatusConfigEntry) -> int:

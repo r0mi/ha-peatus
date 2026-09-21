@@ -10,6 +10,7 @@ from custom_components.peatus.api import (
     _classify_mode,
     _feature_stop_name,
     _gtfs_id_from_feature,
+    _ride_seconds,
     route_sort_key,
 )
 
@@ -352,3 +353,83 @@ async def test_search_keeps_shortlist_when_completion_fails(api, session) -> Non
     stops = await api.async_search_stops("Järve")
 
     assert [stop.gtfs_id for stop in stops] == ["estonia:10415"]
+
+
+@pytest.mark.parametrize(
+    ("stoptimes", "expected"),
+    [
+        # The ordinary case: depart the origin, arrive at the destination.
+        (
+            [
+                {"stop": {"gtfsId": "estonia:A"}, "scheduledDeparture": 100},
+                {"stop": {"gtfsId": "estonia:B"}, "scheduledArrival": 940},
+            ],
+            840,
+        ),
+        # Stops before the origin are not where the ride starts.
+        (
+            [
+                {"stop": {"gtfsId": "estonia:X"}, "scheduledDeparture": 0},
+                {"stop": {"gtfsId": "estonia:A"}, "scheduledDeparture": 100},
+                {"stop": {"gtfsId": "estonia:B"}, "scheduledArrival": 940},
+            ],
+            840,
+        ),
+        # A loop route calls at the destination before the origin as well; the
+        # ride is the leg after boarding, not the one before it.
+        (
+            [
+                {"stop": {"gtfsId": "estonia:B"}, "scheduledArrival": 10},
+                {"stop": {"gtfsId": "estonia:A"}, "scheduledDeparture": 100},
+                {"stop": {"gtfsId": "estonia:B"}, "scheduledArrival": 940},
+            ],
+            840,
+        ),
+        # A trip that never reaches the destination has no ride length.
+        ([{"stop": {"gtfsId": "estonia:A"}, "scheduledDeparture": 100}], None),
+        ([], None),
+        # Times the feed leaves out cannot be turned into a duration.
+        (
+            [
+                {"stop": {"gtfsId": "estonia:A"}, "scheduledDeparture": 100},
+                {"stop": {"gtfsId": "estonia:B"}},
+            ],
+            None,
+        ),
+    ],
+)
+def test_ride_seconds(stoptimes, expected) -> None:
+    """The ride is measured from the origin to the destination after it."""
+    assert _ride_seconds(stoptimes, "estonia:A", "estonia:B") == expected
+
+
+async def test_get_ride_seconds_batches_trips(api, session) -> None:
+    """Every trip is looked up in one request, and unknown ones are skipped."""
+    session.graphql_response = {
+        "data": {
+            "t0": {
+                "stoptimes": [
+                    {"stop": {"gtfsId": "estonia:A"}, "scheduledDeparture": 100},
+                    {"stop": {"gtfsId": "estonia:B"}, "scheduledArrival": 940},
+                ]
+            },
+            # The feed does not know this trip any more.
+            "t1": None,
+        }
+    }
+
+    rides = await api.async_get_ride_seconds(
+        ["trip:1", "trip:2"], "estonia:A", "estonia:B"
+    )
+
+    assert rides == {"trip:1": 840}
+    assert session.posted["variables"] == {"id0": "trip:1", "id1": "trip:2"}
+    # One aliased lookup per trip, since the feed has no "these trips" field.
+    assert "t0: trip(id: $id0)" in session.posted["query"]
+    assert "t1: trip(id: $id1)" in session.posted["query"]
+
+
+async def test_get_ride_seconds_without_trips_asks_nothing(api, session) -> None:
+    """An empty board makes no request at all."""
+    assert await api.async_get_ride_seconds([], "estonia:A", "estonia:B") == {}
+    assert session.posted is None

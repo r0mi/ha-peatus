@@ -39,6 +39,7 @@ def api_fixture():
             return_value=[make_departure(60 * i) for i in range(1, 6)]
         )
         client.async_get_pattern_codes_to = AsyncMock(return_value={"p1"})
+        client.async_get_ride_seconds = AsyncMock(return_value={})
         yield client
 
 
@@ -267,3 +268,36 @@ async def test_unload_entry(hass: HomeAssistant, api) -> None:
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
     assert hass.states.get("sensor.peatus_viru_next_departure").state == "unavailable"
+
+
+async def test_ride_length_attributes_with_a_destination(
+    hass: HomeAssistant, api
+) -> None:
+    """A board with a destination reports the ride and when it gets there."""
+    api.async_get_ride_seconds = AsyncMock(return_value={"estonia:60": 840})
+    await setup_entry(
+        hass,
+        build_entry(
+            **{
+                CONF_DESTINATION_ID: "estonia:1256",
+                CONF_DESTINATION_NAME: "Vana-Lõuna",
+            }
+        ),
+    )
+
+    state = hass.states.get("sensor.peatus_viru_vana_louna_next_departure")
+    assert state is not None
+    assert state.attributes["ride_minutes"] == 14
+    # Measured from the realtime departure, so a late departure arrives late.
+    expected = dt_util.utc_from_timestamp(1789506000 + 60 + 840)
+    assert state.attributes["arrival_time"] == expected.isoformat()
+
+
+async def test_no_ride_length_without_a_destination(hass: HomeAssistant, api) -> None:
+    """A plain stop board has no destination to measure a ride to."""
+    await setup_entry(hass, build_entry())
+
+    state = hass.states.get("sensor.peatus_viru_next_departure")
+    assert state is not None
+    assert "ride_minutes" not in state.attributes
+    assert "arrival_time" not in state.attributes
