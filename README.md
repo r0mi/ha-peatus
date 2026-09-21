@@ -207,19 +207,25 @@ entities:
     name: >
       {{ state_attr(config.entity, 'route') }}
       → {{ state_attr(config.entity, 'headsign') }}
-    state: "{{ time_until(states(config.entity) | as_datetime) or 'departing' }}"
+    state: >-
+      {% set dt = states(config.entity) | as_datetime %}
+      {{ 'departing' if dt is none or dt <= now() else time_until(dt) }}
   - entity: sensor.peatus_viru_departure_2
     type: custom:template-entity-row
     name: >
       {{ state_attr(config.entity, 'route') }}
       → {{ state_attr(config.entity, 'headsign') }}
-    state: "{{ time_until(states(config.entity) | as_datetime) or 'departing' }}"
+    state: >-
+      {% set dt = states(config.entity) | as_datetime %}
+      {{ 'departing' if dt is none or dt <= now() else time_until(dt) }}
   - entity: sensor.peatus_viru_departure_3
     type: custom:template-entity-row
     name: >
       {{ state_attr(config.entity, 'route') }}
       → {{ state_attr(config.entity, 'headsign') }}
-    state: "{{ time_until(states(config.entity) | as_datetime) or 'departing' }}"
+    state: >-
+      {% set dt = states(config.entity) | as_datetime %}
+      {{ 'departing' if dt is none or dt <= now() else time_until(dt) }}
 ```
 
 A plain `entities` card works too — Home Assistant renders timestamp sensors as
