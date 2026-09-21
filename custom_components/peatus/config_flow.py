@@ -49,6 +49,9 @@ from .const import (
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
     MODE_BUS,
+    MODE_FERRY,
+    MODE_RAIL,
+    MODE_TRAM,
     MODE_TROLLEYBUS,
     SUPPORTED_MODES,
 )
@@ -118,6 +121,60 @@ def _settings_schema(
             ),
             vol.Required(CONF_SCAN_INTERVAL, default=interval): INTERVAL_SELECTOR,
         }
+    )
+
+
+#: The Estonian alphabet past "r", where it stops matching code point order:
+#: ``š`` and ``ž`` sort beside their plain letters, and the vowels come after
+#: ``w`` rather than in the Latin-1 order Python would put them in. Each letter
+#: maps to a token that sorts the right way as plain text.
+_ESTONIAN_COLLATION = str.maketrans(
+    {
+        "s": "s1",
+        "š": "s2",
+        "z": "s3",
+        "ž": "s4",
+        "õ": "w1",
+        "ä": "w2",
+        "ö": "w3",
+        "ü": "w4",
+    }
+)
+
+#: Modes in the order they are offered within one place, most distinctive
+#: first: a search that turns up a train and a bus stop of the same name is
+#: nearly always after the train.
+_MODE_ORDER = (MODE_RAIL, MODE_TRAM, MODE_TROLLEYBUS, MODE_BUS, MODE_FERRY)
+
+#: Tallinn's own localities are spelled "Tallinna linn, <district>".
+_TALLINN = "tallinna linn"
+
+
+def _estonian_sort_key(text: str) -> str:
+    """Return a key ordering text by the Estonian alphabet."""
+    return text.casefold().translate(_ESTONIAN_COLLATION)
+
+
+def _stop_sort_key(stop: Stop) -> tuple:
+    """Return the order stops are offered in for picking.
+
+    Stop names repeat across the country, so the platforms of one stop are kept
+    together: by name, then by place with Tallinn first, then by mode so an
+    interchange's trains sit beside each other, and finally by platform code.
+    """
+    locality = stop.locality or ""
+    try:
+        mode = _MODE_ORDER.index(stop.vehicle_mode)
+    except ValueError:
+        # A mode the feed does not report, or one this integration has no name
+        # for, is listed after the modes it does.
+        mode = len(_MODE_ORDER)
+    return (
+        _estonian_sort_key(stop.name),
+        0 if locality.casefold().startswith(_TALLINN) else 1,
+        _estonian_sort_key(locality),
+        mode,
+        stop.code or "",
     )
 
 
@@ -330,7 +387,7 @@ class PeatusConfigFlow(ConfigFlow, domain=DOMAIN):
             return {"base": "cannot_connect"}
         if not stops:
             return {CONF_NAME: "no_stops_found"}
-        self._stops = sorted(stops, key=lambda stop: (stop.name, stop.code or ""))
+        self._stops = sorted(stops, key=_stop_sort_key)
         return {}
 
     def _selected(self, gtfs_id: str) -> Stop:

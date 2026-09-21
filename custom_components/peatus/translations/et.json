@@ -25,7 +25,7 @@
       },
       "pick_stop": {
         "title": "Vali väljumispeatus",
-        "description": "Peatuste nimed korduvad üle Eesti. Suund, tsoon ja teenindavad liinid on näidatud, et aidata valida õiget platvormi.",
+        "description": "Peatuste nimed korduvad üle Eesti, seetõttu on ühe peatuse platvormid koos: esmalt koha järgi, Tallinn eespool, siis transpordiliigi järgi. Omavalitsus, suund, tsoon ja teenindavad liinid on näidatud, et aidata valida õiget platvormi.",
         "data": {
           "stop": "Peatus"
         }

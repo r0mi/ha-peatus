@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from custom_components.peatus.api import PeatusApiError, PeatusStopNotFoundError
+from custom_components.peatus.config_flow import _estonian_sort_key, _stop_sort_key
 from custom_components.peatus.const import (
     CONF_DESTINATION_ID,
     CONF_MODES,
@@ -325,3 +326,100 @@ async def test_duplicate_destination_pair_aborts(
     repeat = await _add_board(hass, api, destination="estonia:1256")
     assert repeat["type"] is FlowResultType.ABORT
     assert repeat["reason"] == "already_configured"
+
+
+def test_estonian_sort_key_follows_the_estonian_alphabet() -> None:
+    """Text sorts by the Estonian alphabet, not by code point."""
+    words = ["Zoo", "Šokolaad", "Taevas", "Õismäe", "Ära", "Öö", "Ülemiste", "Sadam"]
+
+    assert sorted(words, key=_estonian_sort_key) == [
+        "Sadam",
+        "Šokolaad",
+        "Zoo",
+        "Taevas",
+        # The vowels come after w, in this order, rather than after "ä" as
+        # their code points would have it.
+        "Õismäe",
+        "Ära",
+        "Öö",
+        "Ülemiste",
+    ]
+
+
+def test_stop_sort_key_groups_platforms_by_place_then_mode() -> None:
+    """Platforms of one stop are offered together, Tallinn first.
+
+    A search for a name as common as "Järve" turns up two dozen stops, so the
+    four platforms of the Tallinn one have to sit together, with the trains
+    beside each other rather than split by the bus platforms between them.
+    """
+    tallinn = "Tallinna linn, Kristiine"
+    stops = [
+        make_stop(
+            "estonia:1",
+            "Järve",
+            code="6700178-1",
+            vehicle_mode="bus",
+            locality="Pärnumaa, Pärnu linn",
+        ),
+        make_stop(
+            "estonia:2", "Järve", code="06803-1", vehicle_mode="bus", locality=tallinn
+        ),
+        make_stop(
+            "estonia:3",
+            "Järve",
+            code="6500093-1",
+            vehicle_mode="bus",
+            locality="Põlvamaa, Põlva vald",
+        ),
+        make_stop(
+            "estonia:4", "Järve", code="06805-1", vehicle_mode="rail", locality=tallinn
+        ),
+        make_stop(
+            "estonia:5",
+            "Järve tee",
+            code="4991022",
+            vehicle_mode="bus",
+            locality="Jõgevamaa, Mustvee vald",
+        ),
+        make_stop(
+            "estonia:6", "Järve", code="06804-1", vehicle_mode="rail", locality=tallinn
+        ),
+        make_stop(
+            "estonia:7", "Järve", code="06801-1", vehicle_mode="bus", locality=tallinn
+        ),
+    ]
+
+    assert [stop.gtfs_id for stop in sorted(stops, key=_stop_sort_key)] == [
+        # Tallinn leads, trains before buses, then platform code.
+        "estonia:6",
+        "estonia:4",
+        "estonia:7",
+        "estonia:2",
+        # Then the rest of the country, in Estonian alphabetical order:
+        # Põlvamaa before Pärnumaa, which a code point sort reverses.
+        "estonia:3",
+        "estonia:1",
+        # A different stop name is a separate group entirely.
+        "estonia:5",
+    ]
+
+
+def test_stop_sort_key_tolerates_missing_details() -> None:
+    """Stops the feed describes only partly still sort without failing."""
+    stops = [
+        make_stop("estonia:1", "Järve", code=None, vehicle_mode=None, locality=None),
+        make_stop(
+            "estonia:2",
+            "Järve",
+            code="06805-1",
+            vehicle_mode="rail",
+            locality="Tallinna linn, Kristiine",
+        ),
+    ]
+
+    # A stop of unknown mode is listed after the modes the feed does report.
+    assert [stop.gtfs_id for stop in sorted(stops, key=_stop_sort_key)] == [
+        "estonia:2",
+        "estonia:1",
+    ]

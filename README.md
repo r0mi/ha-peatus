@@ -60,7 +60,11 @@ The config flow walks through four short steps:
 
 1. **How to find the stop** — search by name, or paste a GTFS ID such as
    `estonia:1292`.
-2. **Pick the stop.** Stop names repeat all over Estonia, so each candidate is
+2. **Pick the stop.** Stop names repeat all over Estonia — there are two dozen
+   stops called `Järve` — so the platforms of one stop are listed together: by
+   name, then by place with Tallinn first, then by transport mode, so an
+   interchange's trains sit beside each other rather than split up by its bus
+   platforms. Places sort in Estonian alphabetical order. Each candidate is
    labelled with its code, municipality, direction, fare zone and the lines it
    serves, for example:
 

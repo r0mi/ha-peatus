@@ -25,7 +25,7 @@
       },
       "pick_stop": {
         "title": "Select the departure stop",
-        "description": "Stop names repeat across Estonia. The direction, zone and served lines are shown to help you pick the right platform.",
+        "description": "Stop names repeat across Estonia, so the platforms of one stop are listed together: by place with Tallinn first, then by transport mode. The municipality, direction, zone and served lines are shown to help you pick the right platform.",
         "data": {
           "stop": "Stop"
         }
