@@ -16,6 +16,7 @@ from custom_components.peatus.api import (
     _ride_seconds,
     route_sort_key,
 )
+from custom_components.peatus.const import DEFAULT_MAX_WALK_DISTANCE
 
 
 class FakeResponse:
@@ -714,6 +715,30 @@ async def test_plan_sends_speeds_in_metres_per_second(api, session) -> None:
     assert variables["walkSpeed"] == pytest.approx(1.3333, abs=0.0001)
     assert variables["bikeSpeed"] == pytest.approx(5.0)
     assert variables["optimize"] == "FLAT"
+
+
+async def test_plan_sends_the_walk_limit_in_metres(api, session) -> None:
+    """The longest walk is a distance, and reaches the feed as one."""
+    session.graphql_response = _plan([])
+
+    await api.async_plan(
+        (1.0, 2.0),
+        (3.0, 4.0),
+        3,
+        ["bus"],
+        PlanOptions(max_walk_distance_m=7500),
+    )
+
+    assert session.posted["variables"]["maxWalkDistance"] == 7500
+
+
+async def test_plan_sends_a_walk_limit_of_its_own_by_default(api, session) -> None:
+    """Left alone, the limit is ours rather than the feed's tighter one."""
+    session.graphql_response = _plan([])
+
+    await api.async_plan((1.0, 2.0), (3.0, 4.0), 3, ["bus"], PlanOptions())
+
+    assert session.posted["variables"]["maxWalkDistance"] == DEFAULT_MAX_WALK_DISTANCE
 
 
 async def test_plan_orders_itineraries_by_departure(api, session) -> None:

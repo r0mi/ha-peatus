@@ -14,6 +14,7 @@ from .const import (
     API_URL,
     DEFAULT_BIKE_OPTIMIZE,
     DEFAULT_BIKE_SPEED,
+    DEFAULT_MAX_WALK_DISTANCE,
     DEFAULT_WALK_SPEED,
     GEOCODER_URL,
     MIN_ACCESS_WALK,
@@ -207,6 +208,9 @@ class PlanOptions:
     walk_speed_kmh: float = DEFAULT_WALK_SPEED
     bike_speed_kmh: float = DEFAULT_BIKE_SPEED
     bike_optimize: str = DEFAULT_BIKE_OPTIMIZE
+    #: Metres, and a hard limit rather than a preference: the planner discards
+    #: every journey needing a longer walk to or from a stop.
+    max_walk_distance_m: int = DEFAULT_MAX_WALK_DISTANCE
 
 
 _STOP_FIELDS = "gtfsId name code desc zoneId vehicleMode lat lon routes{shortName}"
@@ -307,6 +311,7 @@ query Plan(
   $walkSpeed: Float
   $bikeSpeed: Float
   $optimize: OptimizeType
+  $maxWalkDistance: Float
 ) {{
   plan(
     from: {{lat: $fromLat, lon: $fromLon}}
@@ -316,6 +321,7 @@ query Plan(
     walkSpeed: $walkSpeed
     bikeSpeed: $bikeSpeed
     optimize: $optimize
+    maxWalkDistance: $maxWalkDistance
     omitCanceled: true
   ) {{
     itineraries {{
@@ -918,6 +924,7 @@ class PeatusApi:
                 "walkSpeed": options.walk_speed_kmh / _KMH_TO_MS,
                 "bikeSpeed": options.bike_speed_kmh / _KMH_TO_MS,
                 "optimize": options.bike_optimize.upper(),
+                "maxWalkDistance": options.max_walk_distance_m,
             },
         )
         plan = data.get("plan") or {}

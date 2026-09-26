@@ -153,12 +153,20 @@ Choose **Plan a journey between two places** on the first step, then:
    short one — or rename the device afterwards, which offers to rename all
    seven entities with it.
 2. **Journey settings.** Modes, lines and update interval as above, plus
-   walking speed, cycling speed and a cycling route preference.
+   walking speed, cycling speed, a cycling route preference and the longest
+   walk you are willing to make.
 
 Speeds are entered in km/h. They default to the planner's own assumptions —
 4.8 km/h walking and 18 km/h cycling — and are a *maximum along the street*
 rather than an average, so set them a little below your real pace: the planner
 does not model junctions, lights or hills.
+
+**Longest walk** is a limit rather than a preference, and the one setting worth
+understanding before you change it. Every journey needing a longer walk to or
+from a stop is thrown away *before* anything is ranked, so too tight a limit
+does not make a plan walk less — it removes the plan. The default of 5000 m is
+deliberately well above the planner's own 2000 m, which is too tight for a
+destination that is not near a line.
 
 The line filter behaves differently here than on a stop board. A journey is a
 single take-it-or-leave-it offer, so it is only shown when **every** ride on it

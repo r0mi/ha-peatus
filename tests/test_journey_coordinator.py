@@ -15,12 +15,14 @@ from custom_components.peatus.const import (
     CONF_BIKE_SPEED,
     CONF_BOARD,
     CONF_DESTINATION_ENTITY,
+    CONF_MAX_WALK_DISTANCE,
     CONF_MODES,
     CONF_ORIGIN_ENTITY,
     CONF_ROUTES,
     CONF_WALK_SPEED,
     DEFAULT_BIKE_OPTIMIZE,
     DEFAULT_BIKE_SPEED,
+    DEFAULT_MAX_WALK_DISTANCE,
     DEFAULT_WALK_SPEED,
     DOMAIN,
     NUM_ITINERARIES,
@@ -223,6 +225,7 @@ async def test_modes_and_preferences_reach_the_planner(hass: HomeAssistant) -> N
             CONF_WALK_SPEED: 6.0,
             CONF_BIKE_SPEED: 22.0,
             CONF_BIKE_OPTIMIZE: "flat",
+            CONF_MAX_WALK_DISTANCE: 7500,
         },
     )
 
@@ -233,6 +236,7 @@ async def test_modes_and_preferences_reach_the_planner(hass: HomeAssistant) -> N
     assert plan_options.walk_speed_kmh == 6.0
     assert plan_options.bike_speed_kmh == 22.0
     assert plan_options.bike_optimize == "flat"
+    assert plan_options.max_walk_distance_m == 7500
 
 
 async def test_preferences_fall_back_to_the_defaults(hass: HomeAssistant) -> None:
@@ -247,6 +251,7 @@ async def test_preferences_fall_back_to_the_defaults(hass: HomeAssistant) -> Non
     assert plan_options.walk_speed_kmh == DEFAULT_WALK_SPEED
     assert plan_options.bike_speed_kmh == DEFAULT_BIKE_SPEED
     assert plan_options.bike_optimize == DEFAULT_BIKE_OPTIMIZE
+    assert plan_options.max_walk_distance_m == DEFAULT_MAX_WALK_DISTANCE
 
 
 async def test_route_filter_keeps_only_the_chosen_lines(hass: HomeAssistant) -> None:

@@ -17,6 +17,7 @@ from custom_components.peatus.const import (
     CONF_DESTINATION_ENTITY,
     CONF_DESTINATION_ID,
     CONF_DESTINATION_NAME,
+    CONF_MAX_WALK_DISTANCE,
     CONF_MODES,
     CONF_ORIGIN_ENTITY,
     CONF_ORIGIN_NAME,
@@ -28,6 +29,7 @@ from custom_components.peatus.const import (
     DEFAULT_BIKE_OPTIMIZE,
     DEFAULT_BIKE_SPEED,
     DEFAULT_JOURNEY_SCAN_INTERVAL,
+    DEFAULT_MAX_WALK_DISTANCE,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_WALK_SPEED,
     DOMAIN,
@@ -484,6 +486,7 @@ async def _add_journey(hass: HomeAssistant, **settings):
             CONF_WALK_SPEED: 4.8,
             CONF_BIKE_SPEED: 18.0,
             CONF_BIKE_OPTIMIZE: "quick",
+            CONF_MAX_WALK_DISTANCE: 5000,
             **settings,
         },
     )
@@ -523,6 +526,7 @@ async def test_journey_flow_creates_an_entry(hass: HomeAssistant, no_setup) -> N
         CONF_WALK_SPEED: 4.8,
         CONF_BIKE_SPEED: 18.0,
         CONF_BIKE_OPTIMIZE: "quick",
+        CONF_MAX_WALK_DISTANCE: 5000,
     }
 
 
@@ -606,6 +610,7 @@ async def test_journey_settings_default_to_the_feeds_own_speeds(
     assert defaults[CONF_WALK_SPEED] == DEFAULT_WALK_SPEED
     assert defaults[CONF_BIKE_SPEED] == DEFAULT_BIKE_SPEED
     assert defaults[CONF_BIKE_OPTIMIZE] == DEFAULT_BIKE_OPTIMIZE
+    assert defaults[CONF_MAX_WALK_DISTANCE] == DEFAULT_MAX_WALK_DISTANCE
     assert defaults[CONF_SCAN_INTERVAL] == DEFAULT_JOURNEY_SCAN_INTERVAL
 
 

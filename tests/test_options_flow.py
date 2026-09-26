@@ -15,6 +15,7 @@ from custom_components.peatus.const import (
     CONF_BOARD,
     CONF_DESTINATION_ENTITY,
     CONF_DESTINATION_NAME,
+    CONF_MAX_WALK_DISTANCE,
     CONF_MODES,
     CONF_ORIGIN_ENTITY,
     CONF_ORIGIN_NAME,
@@ -209,6 +210,7 @@ def build_journey_entry(**options) -> MockConfigEntry:
             CONF_WALK_SPEED: 4.8,
             CONF_BIKE_SPEED: 18.0,
             CONF_BIKE_OPTIMIZE: "quick",
+            CONF_MAX_WALK_DISTANCE: 5000,
             **options,
         },
         unique_id="journey:person.romi|zone.work",
@@ -286,6 +288,7 @@ async def test_journey_options_round_trip(
             CONF_WALK_SPEED: 6.0,
             CONF_BIKE_SPEED: 22.5,
             CONF_BIKE_OPTIMIZE: "flat",
+            CONF_MAX_WALK_DISTANCE: 7500,
         },
     )
     await hass.async_block_till_done()
@@ -298,4 +301,5 @@ async def test_journey_options_round_trip(
         CONF_WALK_SPEED: 6.0,
         CONF_BIKE_SPEED: 22.5,
         CONF_BIKE_OPTIMIZE: "flat",
+        CONF_MAX_WALK_DISTANCE: 7500,
     }

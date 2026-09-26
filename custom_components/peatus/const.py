@@ -89,6 +89,19 @@ DEFAULT_BIKE_SPEED: Final = 18.0
 MIN_SPEED: Final = 1.0
 MAX_SPEED: Final = 40.0
 
+#: Longest walk, in metres, allowed to or from a stop. This is not a preference
+#: the planner weighs against others: it throws away every journey needing a
+#: longer walk before it ranks anything. The API's own default of 2000 m is far
+#: too tight for a destination that is not near a stop — planning to a place
+#: three and a half kilometres from the nearest useful line left nothing but an
+#: overnight wait, where allowing the walk found a ride and a stroll in under an
+#: hour and a half. Walking is still penalised against riding, so a longer limit
+#: widens what may be offered rather than making anyone walk.
+CONF_MAX_WALK_DISTANCE: Final = "max_walk_distance"
+DEFAULT_MAX_WALK_DISTANCE: Final = 5000
+MIN_WALK_DISTANCE: Final = 500
+MAX_WALK_DISTANCE: Final = 20000
+
 #: Transport modes offered to the user. The feed publishes these upper case;
 #: they are lower cased on the way in so the same strings can be used as
 #: translation keys for the selector, which only allows [a-z0-9-_].

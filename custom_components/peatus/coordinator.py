@@ -24,6 +24,7 @@ from .const import (
     CONF_BOARD,
     CONF_DESTINATION_ENTITY,
     CONF_DESTINATION_ID,
+    CONF_MAX_WALK_DISTANCE,
     CONF_MODES,
     CONF_ORIGIN_ENTITY,
     CONF_ROUTES,
@@ -33,6 +34,7 @@ from .const import (
     DEFAULT_BIKE_OPTIMIZE,
     DEFAULT_BIKE_SPEED,
     DEFAULT_JOURNEY_SCAN_INTERVAL,
+    DEFAULT_MAX_WALK_DISTANCE,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_WALK_SPEED,
     DOMAIN,
@@ -235,6 +237,9 @@ def _plan_options(entry: PeatusConfigEntry) -> PlanOptions:
         walk_speed_kmh=float(entry.options.get(CONF_WALK_SPEED, DEFAULT_WALK_SPEED)),
         bike_speed_kmh=float(entry.options.get(CONF_BIKE_SPEED, DEFAULT_BIKE_SPEED)),
         bike_optimize=str(entry.options.get(CONF_BIKE_OPTIMIZE, DEFAULT_BIKE_OPTIMIZE)),
+        max_walk_distance_m=int(
+            entry.options.get(CONF_MAX_WALK_DISTANCE, DEFAULT_MAX_WALK_DISTANCE)
+        ),
     )
 
 

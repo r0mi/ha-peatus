@@ -63,14 +63,15 @@
       },
       "journey_settings": {
         "title": "Teekonna seaded",
-        "description": "Pakutakse ainult valitud transpordiliikidega teekondi. Tallinna trollibussiliinid avaldatakse andmeallikas bussidena, seetõttu on need siin eraldi loetletud. Jäta liinid tühjaks, et saada kõiki marsruute, või sisesta liininumbrid, millega oled nõus sõitma — teekonda pakutakse ainult siis, kui kõik selle sõidud kasutavad neid liine. Kõndimis- ja rattakiirus on tänaval suurim, mitte keskmine kiirus, seega määra need veidi oma tegelikust tempost madalamaks. Teekonna planeerimine koormab andmeallikat tunduvalt rohkem kui sõiduplaani lugemine, seega päri seda harva. Kui ka see on sagedamini kui vaja, lülita kirje süsteemiseadetes välja „Luba uuenduste pärimine” ja värskenda tablood automatiseeringuga, kasutades tegevust homeassistant.update_entity.",
+        "description": "Pakutakse ainult valitud transpordiliikidega teekondi. Tallinna trollibussiliinid avaldatakse andmeallikas bussidena, seetõttu on need siin eraldi loetletud. Jäta liinid tühjaks, et saada kõiki marsruute, või sisesta liininumbrid, millega oled nõus sõitma — teekonda pakutakse ainult siis, kui kõik selle sõidud kasutavad neid liine. Kõndimis- ja rattakiirus on tänaval suurim, mitte keskmine kiirus, seega määra need veidi oma tegelikust tempost madalamaks. Pikim jalgsitee on piir, mitte eelistus: pikemat kõndi nõudvat teekonda ei pakuta üldse, seega võrgustikust eemal asuv sihtkoht vajab heldemat piiri. Teekonna planeerimine koormab andmeallikat tunduvalt rohkem kui sõiduplaani lugemine, seega päri seda harva. Kui ka see on sagedamini kui vaja, lülita kirje süsteemiseadetes välja „Luba uuenduste pärimine” ja värskenda tablood automatiseeringuga, kasutades tegevust homeassistant.update_entity.",
         "data": {
           "modes": "Transpordiliigid",
           "routes": "Liinid",
           "scan_interval": "Uuendamise intervall",
           "walk_speed": "Kõndimiskiirus",
           "bike_speed": "Rattasõidu kiirus",
-          "bike_optimize": "Rattamarsruudi eelistus"
+          "bike_optimize": "Rattamarsruudi eelistus",
+          "max_walk_distance": "Pikim jalgsitee"
         }
       }
     },
@@ -105,9 +106,10 @@
           "scan_interval": "Uuendamise intervall",
           "walk_speed": "Kõndimiskiirus",
           "bike_speed": "Rattasõidu kiirus",
-          "bike_optimize": "Rattamarsruudi eelistus"
+          "bike_optimize": "Rattamarsruudi eelistus",
+          "max_walk_distance": "Pikim jalgsitee"
         },
-        "description": "Pakutakse ainult valitud transpordiliikidega teekondi. Tallinna trollibussiliinid avaldatakse andmeallikas bussidena, seetõttu on need siin eraldi loetletud. Jäta liinid tühjaks, et saada kõiki marsruute, või sisesta liininumbrid, millega oled nõus sõitma — teekonda pakutakse ainult siis, kui kõik selle sõidud kasutavad neid liine. Kõndimis- ja rattakiirus on tänaval suurim, mitte keskmine kiirus, seega määra need veidi oma tegelikust tempost madalamaks. Teekonna planeerimine koormab andmeallikat tunduvalt rohkem kui sõiduplaani lugemine, seega päri seda harva. Kui ka see on sagedamini kui vaja, lülita kirje süsteemiseadetes välja „Luba uuenduste pärimine” ja värskenda tablood automatiseeringuga, kasutades tegevust homeassistant.update_entity."
+        "description": "Pakutakse ainult valitud transpordiliikidega teekondi. Tallinna trollibussiliinid avaldatakse andmeallikas bussidena, seetõttu on need siin eraldi loetletud. Jäta liinid tühjaks, et saada kõiki marsruute, või sisesta liininumbrid, millega oled nõus sõitma — teekonda pakutakse ainult siis, kui kõik selle sõidud kasutavad neid liine. Kõndimis- ja rattakiirus on tänaval suurim, mitte keskmine kiirus, seega määra need veidi oma tegelikust tempost madalamaks. Pikim jalgsitee on piir, mitte eelistus: pikemat kõndi nõudvat teekonda ei pakuta üldse, seega võrgustikust eemal asuv sihtkoht vajab heldemat piiri. Teekonna planeerimine koormab andmeallikat tunduvalt rohkem kui sõiduplaani lugemine, seega päri seda harva. Kui ka see on sagedamini kui vaja, lülita kirje süsteemiseadetes välja „Luba uuenduste pärimine” ja värskenda tablood automatiseeringuga, kasutades tegevust homeassistant.update_entity."
       }
     }
   },

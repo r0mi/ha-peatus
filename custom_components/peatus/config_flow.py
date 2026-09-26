@@ -47,6 +47,7 @@ from .const import (
     CONF_DESTINATION_ENTITY,
     CONF_DESTINATION_ID,
     CONF_DESTINATION_NAME,
+    CONF_MAX_WALK_DISTANCE,
     CONF_MODES,
     CONF_ORIGIN_ENTITY,
     CONF_ORIGIN_NAME,
@@ -60,13 +61,16 @@ from .const import (
     DEFAULT_BIKE_OPTIMIZE,
     DEFAULT_BIKE_SPEED,
     DEFAULT_JOURNEY_SCAN_INTERVAL,
+    DEFAULT_MAX_WALK_DISTANCE,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_WALK_SPEED,
     DOMAIN,
     MAX_SCAN_INTERVAL,
     MAX_SPEED,
+    MAX_WALK_DISTANCE,
     MIN_SCAN_INTERVAL,
     MIN_SPEED,
+    MIN_WALK_DISTANCE,
     MODE_BUS,
     MODE_FERRY,
     MODE_RAIL,
@@ -186,6 +190,19 @@ SPEED_SELECTOR = NumberSelector(
     )
 )
 
+#: A limit in metres rather than a preference, so it is asked for as a plain
+#: distance: anything needing a longer walk to or from a stop is thrown away
+#: before the planner ranks what is left.
+WALK_DISTANCE_SELECTOR = NumberSelector(
+    NumberSelectorConfig(
+        min=MIN_WALK_DISTANCE,
+        max=MAX_WALK_DISTANCE,
+        step=100,
+        mode=NumberSelectorMode.BOX,
+        unit_of_measurement="m",
+    )
+)
+
 BIKE_OPTIMIZE_SELECTOR = SelectSelector(
     SelectSelectorConfig(
         options=list(BIKE_OPTIMIZE),
@@ -205,6 +222,7 @@ def _journey_options(user_input: dict[str, Any]) -> dict[str, Any]:
         CONF_WALK_SPEED: float(user_input[CONF_WALK_SPEED]),
         CONF_BIKE_SPEED: float(user_input[CONF_BIKE_SPEED]),
         CONF_BIKE_OPTIMIZE: user_input[CONF_BIKE_OPTIMIZE],
+        CONF_MAX_WALK_DISTANCE: int(user_input[CONF_MAX_WALK_DISTANCE]),
     }
 
 
@@ -233,6 +251,9 @@ def _journey_settings_schema(
             vol.Required(
                 CONF_BIKE_OPTIMIZE, default=plan.bike_optimize
             ): BIKE_OPTIMIZE_SELECTOR,
+            vol.Required(
+                CONF_MAX_WALK_DISTANCE, default=plan.max_walk_distance_m
+            ): WALK_DISTANCE_SELECTOR,
         }
     )
 
@@ -677,6 +698,9 @@ class PeatusOptionsFlow(OptionsFlow):
                     ),
                     bike_optimize=str(
                         options.get(CONF_BIKE_OPTIMIZE, DEFAULT_BIKE_OPTIMIZE)
+                    ),
+                    max_walk_distance_m=int(
+                        options.get(CONF_MAX_WALK_DISTANCE, DEFAULT_MAX_WALK_DISTANCE)
                     ),
                 ),
             ),

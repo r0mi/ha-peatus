@@ -63,14 +63,15 @@
       },
       "journey_settings": {
         "title": "Journey settings",
-        "description": "Only journeys using the selected transport modes are offered. Tallinn's trolleybus routes are published as buses by the data source, so they are listed separately here. Leave the lines empty to be offered any route, or enter the line numbers you are willing to travel with — a journey is only offered when every ride on it uses one of them. Walking and cycling speeds are a maximum along the street rather than an average, so set them a little below your real pace. Planning a journey costs the data source far more than reading a timetable, so poll it sparingly. If even that is more often than you need, turn off “Enable polling for updates” in the entry’s system options and refresh the board from an automation instead, with the homeassistant.update_entity action.",
+        "description": "Only journeys using the selected transport modes are offered. Tallinn's trolleybus routes are published as buses by the data source, so they are listed separately here. Leave the lines empty to be offered any route, or enter the line numbers you are willing to travel with — a journey is only offered when every ride on it uses one of them. Walking and cycling speeds are a maximum along the street rather than an average, so set them a little below your real pace. The longest walk is a limit rather than a preference: a journey needing a longer walk to or from a stop is not offered at all, so a destination away from the network needs a generous one. Planning a journey costs the data source far more than reading a timetable, so poll it sparingly. If even that is more often than you need, turn off “Enable polling for updates” in the entry’s system options and refresh the board from an automation instead, with the homeassistant.update_entity action.",
         "data": {
           "modes": "Transport modes",
           "routes": "Lines",
           "scan_interval": "Update interval",
           "walk_speed": "Walking speed",
           "bike_speed": "Cycling speed",
-          "bike_optimize": "Cycling route preference"
+          "bike_optimize": "Cycling route preference",
+          "max_walk_distance": "Longest walk"
         }
       }
     },
@@ -105,9 +106,10 @@
           "scan_interval": "Update interval",
           "walk_speed": "Walking speed",
           "bike_speed": "Cycling speed",
-          "bike_optimize": "Cycling route preference"
+          "bike_optimize": "Cycling route preference",
+          "max_walk_distance": "Longest walk"
         },
-        "description": "Only journeys using the selected transport modes are offered. Tallinn's trolleybus routes are published as buses by the data source, so they are listed separately here. Leave the lines empty to be offered any route, or enter the line numbers you are willing to travel with — a journey is only offered when every ride on it uses one of them. Walking and cycling speeds are a maximum along the street rather than an average, so set them a little below your real pace. Planning a journey costs the data source far more than reading a timetable, so poll it sparingly. If even that is more often than you need, turn off “Enable polling for updates” in the entry’s system options and refresh the board from an automation instead, with the homeassistant.update_entity action."
+        "description": "Only journeys using the selected transport modes are offered. Tallinn's trolleybus routes are published as buses by the data source, so they are listed separately here. Leave the lines empty to be offered any route, or enter the line numbers you are willing to travel with — a journey is only offered when every ride on it uses one of them. Walking and cycling speeds are a maximum along the street rather than an average, so set them a little below your real pace. The longest walk is a limit rather than a preference: a journey needing a longer walk to or from a stop is not offered at all, so a destination away from the network needs a generous one. Planning a journey costs the data source far more than reading a timetable, so poll it sparingly. If even that is more often than you need, turn off “Enable polling for updates” in the entry’s system options and refresh the board from an automation instead, with the homeassistant.update_entity action."
       }
     }
   },
