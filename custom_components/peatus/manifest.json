@@ -1,12 +1,14 @@
 {
   "domain": "peatus",
   "name": "Peatus.ee Public Transport",
-  "codeowners": ["@r0mi"],
+  "codeowners": [
+    "@r0mi"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/r0mi/ha-peatus",
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/r0mi/ha-peatus/issues",
   "requirements": [],
-  "version": "0.3.0"
+  "version": "0.4.0"
 }
