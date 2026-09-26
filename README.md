@@ -6,6 +6,7 @@
 [![Release][release-badge]][releases]
 [![License][license-badge]][license]
 [![Validate](https://github.com/r0mi/ha-peatus/actions/workflows/validate.yml/badge.svg)](https://github.com/r0mi/ha-peatus/actions/workflows/validate.yml)
+[![Ruff][ruff-badge]][ruff]
 
 Home Assistant integration that shows the next **10 departures** from any Estonian
 public transport stop, using the same GraphQL API that powers
@@ -751,3 +752,5 @@ endorsed by peatus.ee or the Transport Administration.
 [my-hacs-badge]: https://my.home-assistant.io/badges/hacs_repository.svg
 [release-badge]: https://img.shields.io/github/v/release/r0mi/ha-peatus?color=41BDF5
 [releases]: https://github.com/r0mi/ha-peatus/releases
+[ruff]: https://github.com/astral-sh/ruff
+[ruff-badge]: https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json
