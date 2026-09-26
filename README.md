@@ -16,6 +16,17 @@ Tartu and Pärnu city lines, county buses, Elron trains and ferries.
 
 ## Features
 
+Two kinds of board:
+
+- A **stop board** watches one stop and lists its next departures.
+- A **journey board** plans a door-to-door trip between two places you already
+  track in Home Assistant, walking legs included.
+
+Each board is one config entry, and appears in Home Assistant as one **device**
+grouping that board's sensors.
+
+### Stop boards
+
 - **11 sensors per stop** — `Next departure` plus `Departure 1` … `Departure 10`.
 - **Timestamp states**, so Home Assistant renders a live countdown without the
   integration rewriting sensor states on every poll.
@@ -27,6 +38,24 @@ Tartu and Pärnu city lines, county buses, Elron trains and ferries.
 - **Configurable update interval**, from 1 minute upwards (default 3).
 - Set up entirely from the UI, with stop search or a direct GTFS ID, in English
   and Estonian.
+
+### Journey boards
+
+- **7 sensors per journey** — `Journey 1` … `Journey 5`, plus `Walking` and
+  `Cycling`.
+- **Door to door.** Both ends are places — a zone, a person or a device tracker
+  — rather than stops, so a plan includes the walk to the first stop and from
+  the last one.
+- **Full leg breakdown** in the attributes: every walk, ride and wait with its
+  own duration, line, headsign and the route's own colours. The legs of a
+  journey add up to its total exactly, so a dashboard can draw a proportional
+  bar straight from them.
+- **Follows you.** The origin is resolved on every poll, so a board planned
+  from `person.you` re-plans as you move.
+- **Always offers walking and cycling**, so you can see when the bus is not
+  worth waiting for.
+- **Tunable** walking and cycling speed, and a cycling route preference —
+  fastest, safest, flattest or quiet streets.
 
 ## Installation
 
@@ -91,6 +120,34 @@ schedule change the same line exists twice, as `… (kuni 20.09)` and
 `… (al 21.09)`. Filtering on the number keeps working across those changes; a
 line withdrawn from the timetable altogether stays in the filter until you
 remove it.
+
+### Journey boards
+
+Choose **Plan a journey between two places** on the first step, then:
+
+1. **From and To.** Pick a zone, a person or a device tracker at each end.
+   Prefer a **person** over a raw device tracker: a person follows whichever of
+   its trackers is actually reporting a position, while a tracker that only
+   knows which Wi-Fi network you are on publishes no coordinates at all and
+   cannot be planned from. If you pick one that cannot be located, the board
+   says so by name rather than quietly planning from the wrong place.
+
+2. **Journey settings.** Modes, lines and update interval as above, plus
+   walking speed, cycling speed and a cycling route preference.
+
+Speeds are entered in km/h. They default to the planner's own assumptions —
+4.8 km/h walking and 18 km/h cycling — and are a *maximum along the street*
+rather than an average, so set them a little below your real pace: the planner
+does not model junctions, lights or hills.
+
+The line filter behaves differently here than on a stop board. A journey is a
+single take-it-or-leave-it offer, so it is only shown when **every** ride on it
+uses one of your chosen lines — a plan that changes onto a line you filtered
+out is not a plan you can use.
+
+Journeys are planned from where you are *now*. Coordinates are rounded to about
+eleven metres before planning, so a phone's GPS drifting while it sits on the
+table does not re-plan the walk and rewrite every sensor on each poll.
 
 ## Updating on demand instead of on a timer
 
@@ -179,7 +236,7 @@ The config entry title carries the stop code at both ends, e.g.
 `Laagri (04409-1) → Järve (06805-1)`. Stop names repeat across Estonia and a
 single name can cover several platforms — there are two rail stops called
 Järve, one towards Paldiski and one towards Tallinn — so the code is what
-tells two boards apart in the integration list.
+tells two entries apart in the integration's list.
 
 When a destination is configured it is included, so entity IDs stay distinct
 between boards for the same stop:
@@ -232,6 +289,84 @@ delay picked up during the ride itself is not reflected.
 > timestamp as relative time, and templates can use
 > `as_timestamp(states('sensor.x')) - as_timestamp(now())`.
 
+### Journey board entities
+
+Each configured journey becomes a device with 7 sensors:
+
+| Entity | State | Description |
+| --- | --- | --- |
+| `sensor.peatus_<from>_<to>_journey_1` … `_5` | timestamp | When you have to leave to catch that journey |
+| `sensor.peatus_<from>_<to>_walk` | minutes | How long it takes to walk the whole way |
+| `sensor.peatus_<from>_<to>_ride` | minutes | How long it takes to cycle |
+
+There is deliberately **no "next journey" sensor**. Consecutive journeys can use
+different lines and even different modes, so a single entity called "next" would
+keep changing what it means — unlike a stop board, where every departure leaves
+from the same platform.
+
+The numbered sensors are timestamps for the same reason departures are: Home
+Assistant renders the countdown itself. Walking and cycling are durations
+instead, because they start whenever you do — a timestamp would only ever say
+"now" and would be rewritten on every poll.
+
+### Journey attributes
+
+| Attribute | Example | Notes |
+| --- | --- | --- |
+| `duration_seconds` | `1712` | Authoritative total |
+| `duration_minutes` | `29` | Rounded, for display |
+| `start_time` | `2026-09-23T07:39:52+00:00` | Same as the state on a journey sensor; present on all seven so one card can read them alike |
+| `arrival_time` | `2026-09-23T08:08:24+00:00` | |
+| `departure_time` | `2026-09-23T07:48:00+00:00` | When the **first vehicle** leaves |
+| `departure_stop`, `departure_stop_code` | `Vana-Pääsküla`, `04401-1` | |
+| `walk_minutes`, `wait_minutes`, `walk_distance` | `12`, `0`, `796` | |
+| `transfers` | `1` | One fewer than the number of rides |
+| `routes`, `modes` | `["18", "34"]`, `["bus", "bus"]` | In the order ridden |
+| `origin`, `destination` | `Home`, `Work` | |
+| `origin_entity_id`, `destination_entity_id` | `person.romi`, `zone.work` | |
+| `legs` | see below | Every segment of the journey |
+
+The `departure_*` attributes are about **boarding**, not about leaving the
+house, and are omitted entirely from a plan that boards nothing — a walk has no
+stop to leave from.
+
+Each entry in `legs` looks like this:
+
+```json
+{
+  "mode": "bus",
+  "start_time": "2026-09-23T07:48:00+00:00",
+  "end_time": "2026-09-23T08:05:00+00:00",
+  "duration": 1020,
+  "minutes": 17,
+  "route": "18",
+  "route_long_name": "Viru keskus - Urda",
+  "headsign": "Viru keskus",
+  "color": "#de2c42",
+  "text_color": "#ffffff",
+  "from": "Vana-Pääsküla",
+  "from_stop_code": "04401-1",
+  "to": "Järve",
+  "distance": 8045,
+  "trip_id": "estonia:17206",
+  "realtime": false
+}
+```
+
+`mode` is one of `walk`, `bicycle`, `wait`, `bus`, `trolleybus`, `tram`, `rail`
+or `ferry`. Walking, cycling and waiting legs carry no `route`, `color` or
+`trip_id`, which is the simplest way for a card to tell a ride from the rest.
+
+**The legs of a journey add up to `duration_seconds` exactly**, waiting
+included, so a proportional bar is just `leg.duration / duration_seconds` per
+segment with no arithmetic to get wrong. That is why waiting for a connection
+appears as a `wait` leg of its own rather than only as a total: the data source
+reports waiting as one number per journey, which cannot be split back across
+two transfers.
+
+Use `text_color` rather than assuming white — some lines publish dark text, and
+route 191 in Tallinn is one of them.
+
 ### About realtime data
 
 The integration reads the API's realtime departure fields and falls back to the
@@ -255,6 +390,12 @@ recorder:
     entity_globs:
       - sensor.peatus_*
 ```
+
+This matters rather more for **journey boards** than for stop boards. A journey
+sensor carries its whole `legs` list as an attribute, and Home Assistant stores
+every attribute with every state it records — so seven sensors, each holding
+several legs of nineteen fields, rewritten on each poll, adds up far faster
+than a departure board's single timestamp does.
 
 Or, to keep exactly 24 hours of history instead of none, add an automation:
 
@@ -377,6 +518,25 @@ filter's does, so the cost depends on how often your lines run: filtering a busy
 stop down to its four frequent lines fills all ten sensors from the second
 request, while picking a rarely served line at the same stop has to fetch the
 full 150-departure window to find ten of them.
+
+Journey boards use the API's `plan` query instead, which is a routing search
+rather than a table read — an order of magnitude more expensive, which is why
+they default to a slower poll and never ask for more than fifteen answers. Mode
+filtering there is done by the **server**, since `plan` takes the modes as an
+argument; line filtering is still done here, because `plan` has no route
+argument at all. It does have `banned` and `preferred`, but both take route
+*IDs* — the very thing that changes every timetable period — and `preferred` is
+only a soft penalty rather than a filter.
+
+Walking and cycling plans depend only on the two endpoints, not on any
+timetable, so they are planned once and re-planned only when the rounded
+coordinates actually move. A board that is not going anywhere therefore costs
+one request per poll, not three.
+
+The API reports waiting for a connection as a single number per journey, which
+cannot be divided back among several transfers. So the gaps between legs are
+reconstructed where they actually fall, as `wait` legs of their own. That keeps
+one invariant true for every journey: its legs sum to its duration exactly.
 
 Destination filtering is done by **route pattern**, not by walking every trip's
 stop list on each poll: the set of patterns that reach your destination after

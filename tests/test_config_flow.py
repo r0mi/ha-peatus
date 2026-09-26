@@ -9,13 +9,27 @@ import pytest
 from custom_components.peatus.api import PeatusApiError, PeatusStopNotFoundError
 from custom_components.peatus.config_flow import _estonian_sort_key, _stop_sort_key
 from custom_components.peatus.const import (
+    BOARD_JOURNEY,
+    BOARD_STOP,
+    CONF_BIKE_OPTIMIZE,
+    CONF_BIKE_SPEED,
+    CONF_BOARD,
+    CONF_DESTINATION_ENTITY,
     CONF_DESTINATION_ID,
+    CONF_DESTINATION_NAME,
     CONF_MODES,
+    CONF_ORIGIN_ENTITY,
+    CONF_ORIGIN_NAME,
     CONF_ROUTES,
     CONF_STOP_DESC,
     CONF_STOP_ID,
     CONF_STOP_MODE,
+    CONF_WALK_SPEED,
+    DEFAULT_BIKE_OPTIMIZE,
+    DEFAULT_BIKE_SPEED,
+    DEFAULT_JOURNEY_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_WALK_SPEED,
     DOMAIN,
 )
 from homeassistant.config_entries import SOURCE_USER
@@ -423,3 +437,173 @@ def test_stop_sort_key_tolerates_missing_details() -> None:
         "estonia:2",
         "estonia:1",
     ]
+
+
+# --- Journey boards ---------------------------------------------------------
+
+
+JOURNEY_ORIGIN = "person.romi"
+JOURNEY_DESTINATION = "zone.work"
+
+
+def place_both_ends(hass: HomeAssistant) -> None:
+    """Register the two places a journey runs between."""
+    hass.states.async_set(
+        JOURNEY_ORIGIN, "home", {"friendly_name": "Romi", "latitude": 59.35}
+    )
+    hass.states.async_set(
+        JOURNEY_DESTINATION, "1", {"friendly_name": "Work", "latitude": 59.39}
+    )
+
+
+async def _add_journey(hass: HomeAssistant, **settings):
+    """Run the whole journey flow and return its result."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "journey"}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_ORIGIN_ENTITY: JOURNEY_ORIGIN,
+            CONF_DESTINATION_ENTITY: JOURNEY_DESTINATION,
+        },
+    )
+    if result["type"] is not FlowResultType.FORM or result["step_id"] != (
+        "journey_settings"
+    ):
+        return result
+    return await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_MODES: ["bus"],
+            CONF_ROUTES: [],
+            CONF_SCAN_INTERVAL: 5,
+            CONF_WALK_SPEED: 4.8,
+            CONF_BIKE_SPEED: 18.0,
+            CONF_BIKE_OPTIMIZE: "quick",
+            **settings,
+        },
+    )
+
+
+async def test_menu_offers_a_journey(hass: HomeAssistant) -> None:
+    """A board can watch a stop or plan a journey."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+
+    assert result["type"] is FlowResultType.MENU
+    assert "journey" in result["menu_options"]
+
+
+async def test_journey_flow_creates_an_entry(hass: HomeAssistant, no_setup) -> None:
+    """A journey board records both places and how it plans between them."""
+    place_both_ends(hass)
+
+    result = await _add_journey(hass)
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Romi → Work"
+    assert result["data"] == {
+        CONF_BOARD: BOARD_JOURNEY,
+        CONF_ORIGIN_ENTITY: JOURNEY_ORIGIN,
+        # The names are snapshotted, so renaming the tracker later cannot move
+        # the entity IDs of a board that already exists.
+        CONF_ORIGIN_NAME: "Romi",
+        CONF_DESTINATION_ENTITY: JOURNEY_DESTINATION,
+        CONF_DESTINATION_NAME: "Work",
+    }
+    assert result["options"] == {
+        CONF_MODES: ["bus"],
+        CONF_ROUTES: [],
+        CONF_SCAN_INTERVAL: 5,
+        CONF_WALK_SPEED: 4.8,
+        CONF_BIKE_SPEED: 18.0,
+        CONF_BIKE_OPTIMIZE: "quick",
+    }
+
+
+async def test_journey_ends_must_differ(hass: HomeAssistant) -> None:
+    """Planning from a place to itself is not a journey."""
+    place_both_ends(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "journey"}
+    )
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_ORIGIN_ENTITY: JOURNEY_ORIGIN,
+            CONF_DESTINATION_ENTITY: JOURNEY_ORIGIN,
+        },
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {CONF_DESTINATION_ENTITY: "same_place"}
+
+
+async def test_duplicate_journey_aborts(hass: HomeAssistant, no_setup) -> None:
+    """The same pair of places cannot be set up twice."""
+    place_both_ends(hass)
+    await _add_journey(hass)
+
+    result = await _add_journey(hass)
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured_journey"
+
+
+async def test_a_journey_does_not_collide_with_a_stop_board(
+    hass: HomeAssistant, api, no_setup
+) -> None:
+    """Journey IDs are namespaced, so they cannot clash with a GTFS one."""
+    place_both_ends(hass)
+    await _add_board(hass, api)
+
+    result = await _add_journey(hass)
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+
+
+async def test_a_stop_board_records_its_kind(
+    hass: HomeAssistant, api, no_setup
+) -> None:
+    """New stop entries say so, even though the absence of a kind means stop."""
+    result = await _add_board(hass, api)
+
+    assert result["data"][CONF_BOARD] == BOARD_STOP
+
+
+async def test_journey_settings_default_to_the_feeds_own_speeds(
+    hass: HomeAssistant,
+) -> None:
+    """The form opens on the planner's defaults, restated in km/h."""
+    place_both_ends(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "journey"}
+    )
+
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_ORIGIN_ENTITY: JOURNEY_ORIGIN,
+            CONF_DESTINATION_ENTITY: JOURNEY_DESTINATION,
+        },
+    )
+
+    assert result["step_id"] == "journey_settings"
+    schema = result["data_schema"].schema
+    defaults = {str(key): key.default() for key in schema}
+    assert defaults[CONF_WALK_SPEED] == DEFAULT_WALK_SPEED
+    assert defaults[CONF_BIKE_SPEED] == DEFAULT_BIKE_SPEED
+    assert defaults[CONF_BIKE_OPTIMIZE] == DEFAULT_BIKE_OPTIMIZE
+    assert defaults[CONF_SCAN_INTERVAL] == DEFAULT_JOURNEY_SCAN_INTERVAL

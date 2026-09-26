@@ -16,6 +16,8 @@ from homeassistant.const import CONF_NAME, CONF_SCAN_INTERVAL
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
+    EntitySelector,
+    EntitySelectorConfig,
     NumberSelector,
     NumberSelectorConfig,
     NumberSelectorMode,
@@ -31,23 +33,40 @@ from .api import (
     PeatusApi,
     PeatusApiError,
     PeatusStopNotFoundError,
+    PlanOptions,
     Stop,
     route_sort_key,
 )
 from .const import (
+    BIKE_OPTIMIZE,
+    BOARD_JOURNEY,
+    BOARD_STOP,
+    CONF_BIKE_OPTIMIZE,
+    CONF_BIKE_SPEED,
+    CONF_BOARD,
+    CONF_DESTINATION_ENTITY,
     CONF_DESTINATION_ID,
     CONF_DESTINATION_NAME,
     CONF_MODES,
+    CONF_ORIGIN_ENTITY,
+    CONF_ORIGIN_NAME,
     CONF_ROUTES,
     CONF_STOP_CODE,
     CONF_STOP_DESC,
     CONF_STOP_ID,
     CONF_STOP_MODE,
     CONF_STOP_NAME,
+    CONF_WALK_SPEED,
+    DEFAULT_BIKE_OPTIMIZE,
+    DEFAULT_BIKE_SPEED,
+    DEFAULT_JOURNEY_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_WALK_SPEED,
     DOMAIN,
     MAX_SCAN_INTERVAL,
+    MAX_SPEED,
     MIN_SCAN_INTERVAL,
+    MIN_SPEED,
     MODE_BUS,
     MODE_FERRY,
     MODE_RAIL,
@@ -55,7 +74,7 @@ from .const import (
     MODE_TROLLEYBUS,
     SUPPORTED_MODES,
 )
-from .coordinator import PeatusConfigEntry
+from .coordinator import PeatusConfigEntry, board_type
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -120,6 +139,84 @@ def _settings_schema(
                 routes
             ),
             vol.Required(CONF_SCAN_INTERVAL, default=interval): INTERVAL_SELECTOR,
+        }
+    )
+
+
+#: Both ends of a journey are places rather than stops, which is what gives the
+#: plan a walk at each end. A router-based tracker publishes no coordinates and
+#: cannot be excluded here, because that is a property of its state rather than
+#: of its domain; the coordinator says so plainly when it cannot locate one.
+PLACE_SELECTOR = EntitySelector(
+    EntitySelectorConfig(domain=["person", "device_tracker", "zone"])
+)
+
+JOURNEY_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_ORIGIN_ENTITY): PLACE_SELECTOR,
+        vol.Required(CONF_DESTINATION_ENTITY): PLACE_SELECTOR,
+    }
+)
+
+#: Speeds are asked for in km/h because that is what people think in. They
+#: become the metres per second the feed wants only when the request is built.
+SPEED_SELECTOR = NumberSelector(
+    NumberSelectorConfig(
+        min=MIN_SPEED,
+        max=MAX_SPEED,
+        step=0.1,
+        mode=NumberSelectorMode.BOX,
+        unit_of_measurement="km/h",
+    )
+)
+
+BIKE_OPTIMIZE_SELECTOR = SelectSelector(
+    SelectSelectorConfig(
+        options=list(BIKE_OPTIMIZE),
+        mode=SelectSelectorMode.DROPDOWN,
+        translation_key="bike_optimize",
+        sort=False,
+    )
+)
+
+
+def _journey_options(user_input: dict[str, Any]) -> dict[str, Any]:
+    """Return the options a journey board stores, from its settings form."""
+    return {
+        CONF_MODES: user_input[CONF_MODES],
+        CONF_ROUTES: user_input.get(CONF_ROUTES) or [],
+        CONF_SCAN_INTERVAL: int(user_input[CONF_SCAN_INTERVAL]),
+        CONF_WALK_SPEED: float(user_input[CONF_WALK_SPEED]),
+        CONF_BIKE_SPEED: float(user_input[CONF_BIKE_SPEED]),
+        CONF_BIKE_OPTIMIZE: user_input[CONF_BIKE_OPTIMIZE],
+    }
+
+
+def _journey_settings_schema(
+    modes: list[str],
+    interval: int,
+    routes: list[str],
+    selected_routes: list[str],
+    plan: PlanOptions,
+) -> vol.Schema:
+    """Return the schema for a journey board's settings.
+
+    The first three fields are the ones a stop board also has; the rest tune
+    the planning itself, which only a journey does. Those three travel together
+    as one object, which is also how the API client takes them.
+    """
+    return vol.Schema(
+        {
+            vol.Required(CONF_MODES, default=modes): MODES_SELECTOR,
+            vol.Optional(CONF_ROUTES, default=list(selected_routes)): _routes_selector(
+                routes
+            ),
+            vol.Required(CONF_SCAN_INTERVAL, default=interval): INTERVAL_SELECTOR,
+            vol.Required(CONF_WALK_SPEED, default=plan.walk_speed_kmh): SPEED_SELECTOR,
+            vol.Required(CONF_BIKE_SPEED, default=plan.bike_speed_kmh): SPEED_SELECTOR,
+            vol.Required(
+                CONF_BIKE_OPTIMIZE, default=plan.bike_optimize
+            ): BIKE_OPTIMIZE_SELECTOR,
         }
     )
 
@@ -236,6 +333,12 @@ class PeatusConfigFlow(ConfigFlow, domain=DOMAIN):
         self._origin: Stop | None = None
         self._destination: Stop | None = None
         self._picking_destination = False
+        # The journey branch works in places rather than stops, so it keeps its
+        # own state; only one of the two sets is ever filled in.
+        self._origin_entity: str | None = None
+        self._destination_entity: str | None = None
+        self._origin_name: str | None = None
+        self._destination_name: str | None = None
 
     @property
     def _api(self) -> PeatusApi:
@@ -245,8 +348,90 @@ class PeatusConfigFlow(ConfigFlow, domain=DOMAIN):
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Let the user choose how to identify the stop."""
-        return self.async_show_menu(step_id="user", menu_options=["search", "gtfs_id"])
+        """Let the user choose what kind of board to add."""
+        return self.async_show_menu(
+            step_id="user", menu_options=["search", "gtfs_id", "journey"]
+        )
+
+    async def async_step_journey(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose the two places a journey runs between."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            origin = user_input[CONF_ORIGIN_ENTITY]
+            destination = user_input[CONF_DESTINATION_ENTITY]
+            if origin == destination:
+                errors[CONF_DESTINATION_ENTITY] = "same_place"
+            else:
+                self._origin_entity = origin
+                self._destination_entity = destination
+                # Snapshotted now, the same way a stop's name is: the entity ID
+                # is unreadable in a sensor name, and a later rename must not
+                # move the entity IDs of a board that already exists.
+                self._origin_name = self._place_name(origin)
+                self._destination_name = self._place_name(destination)
+                return await self.async_step_journey_settings()
+        return self.async_show_form(
+            step_id="journey", data_schema=JOURNEY_SCHEMA, errors=errors
+        )
+
+    async def async_step_journey_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose how the journey is planned, then create the entry."""
+        assert self._origin_entity is not None
+        assert self._destination_entity is not None
+
+        await self.async_set_unique_id(self._journey_unique_id())
+        self._abort_if_unique_id_configured(error="already_configured_journey")
+
+        if user_input is not None:
+            return self.async_create_entry(
+                title=f"{self._origin_name} → {self._destination_name}",
+                data={
+                    CONF_BOARD: BOARD_JOURNEY,
+                    CONF_ORIGIN_ENTITY: self._origin_entity,
+                    CONF_ORIGIN_NAME: self._origin_name,
+                    CONF_DESTINATION_ENTITY: self._destination_entity,
+                    CONF_DESTINATION_NAME: self._destination_name,
+                },
+                options=_journey_options(user_input),
+            )
+
+        return self.async_show_form(
+            step_id="journey_settings",
+            data_schema=_journey_settings_schema(
+                list(SUPPORTED_MODES),
+                DEFAULT_JOURNEY_SCAN_INTERVAL,
+                [],
+                [],
+                PlanOptions(),
+            ),
+            description_placeholders={
+                "origin": self._origin_name or "",
+                "destination": self._destination_name or "",
+            },
+        )
+
+    def _place_name(self, entity_id: str) -> str:
+        """Return what to call one end of a journey.
+
+        Falls back to the entity ID, so a board is still nameable for an entity
+        that has not been given a friendly name.
+        """
+        if (state := self.hass.states.get(entity_id)) is not None:
+            return state.name or entity_id
+        return entity_id
+
+    def _journey_unique_id(self) -> str:
+        """Return a stable unique ID for a journey board.
+
+        Namespaced by board kind, which stop boards are not: theirs are GTFS
+        IDs already written into existing entries, and a GTFS ID never starts
+        with this prefix, so the two can never collide.
+        """
+        return f"{BOARD_JOURNEY}:{self._origin_entity}|{self._destination_entity}"
 
     async def async_step_search(
         self, user_input: dict[str, Any] | None = None
@@ -350,6 +535,9 @@ class PeatusConfigFlow(ConfigFlow, domain=DOMAIN):
             return self.async_create_entry(
                 title=_title(self._origin, self._destination),
                 data={
+                    # Written explicitly so a new entry describes itself, even
+                    # though the absence of it already means a stop board.
+                    CONF_BOARD: BOARD_STOP,
                     CONF_STOP_ID: self._origin.gtfs_id,
                     CONF_STOP_NAME: self._origin.name,
                     CONF_STOP_CODE: self._origin.code,
@@ -414,6 +602,9 @@ class PeatusOptionsFlow(OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Show and save the adjustable settings."""
+        if board_type(self.config_entry) == BOARD_JOURNEY:
+            return await self.async_step_journey_options(user_input)
+
         if user_input is not None:
             return self.async_create_entry(
                 data={
@@ -435,6 +626,47 @@ class PeatusOptionsFlow(OptionsFlow):
             ),
             description_placeholders={
                 "stop": self.config_entry.data.get(CONF_STOP_NAME) or ""
+            },
+        )
+
+    async def async_step_journey_options(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show and save the adjustable settings of a journey board.
+
+        A journey has no single stop to list lines from — and asking the feed
+        for one would fail, since the entry holds no stop ID at all — so the
+        lines already chosen are the only ones offered. The selector accepts
+        typed values, so a line can still be added by number.
+        """
+        if user_input is not None:
+            return self.async_create_entry(data=_journey_options(user_input))
+
+        options = self.config_entry.options
+        selected = list(options.get(CONF_ROUTES) or [])
+        data = self.config_entry.data
+        return self.async_show_form(
+            step_id="journey_options",
+            data_schema=_journey_settings_schema(
+                list(options.get(CONF_MODES) or SUPPORTED_MODES),
+                int(options.get(CONF_SCAN_INTERVAL, DEFAULT_JOURNEY_SCAN_INTERVAL)),
+                sorted(selected, key=route_sort_key),
+                selected,
+                PlanOptions(
+                    walk_speed_kmh=float(
+                        options.get(CONF_WALK_SPEED, DEFAULT_WALK_SPEED)
+                    ),
+                    bike_speed_kmh=float(
+                        options.get(CONF_BIKE_SPEED, DEFAULT_BIKE_SPEED)
+                    ),
+                    bike_optimize=str(
+                        options.get(CONF_BIKE_OPTIMIZE, DEFAULT_BIKE_OPTIMIZE)
+                    ),
+                ),
+            ),
+            description_placeholders={
+                "origin": data.get(CONF_ORIGIN_NAME) or "",
+                "destination": data.get(CONF_DESTINATION_NAME) or "",
             },
         )
 

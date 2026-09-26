@@ -6,6 +6,15 @@
       },
       "departure": {
         "default": "mdi:timetable"
+      },
+      "journey": {
+        "default": "mdi:routes"
+      },
+      "walk": {
+        "default": "mdi:walk"
+      },
+      "ride": {
+        "default": "mdi:bike"
       }
     }
   }

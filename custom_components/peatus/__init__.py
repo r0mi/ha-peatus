@@ -5,14 +5,24 @@ from __future__ import annotations
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 
-from .coordinator import PeatusConfigEntry, PeatusCoordinator
+from .const import BOARD_JOURNEY
+from .coordinator import (
+    PeatusConfigEntry,
+    PeatusCoordinator,
+    PeatusJourneyCoordinator,
+    board_type,
+)
 
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: PeatusConfigEntry) -> bool:
-    """Set up a departure board from a config entry."""
-    coordinator = PeatusCoordinator(hass, entry)
+    """Set up a departure or journey board from a config entry."""
+    coordinator: PeatusCoordinator | PeatusJourneyCoordinator
+    if board_type(entry) == BOARD_JOURNEY:
+        coordinator = PeatusJourneyCoordinator(hass, entry)
+    else:
+        coordinator = PeatusCoordinator(hass, entry)
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
 

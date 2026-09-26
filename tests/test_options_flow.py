@@ -9,9 +9,18 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.peatus.api import PeatusApiError
 from custom_components.peatus.const import (
+    BOARD_JOURNEY,
+    CONF_BIKE_OPTIMIZE,
+    CONF_BIKE_SPEED,
+    CONF_BOARD,
+    CONF_DESTINATION_ENTITY,
+    CONF_DESTINATION_NAME,
     CONF_MODES,
+    CONF_ORIGIN_ENTITY,
+    CONF_ORIGIN_NAME,
     CONF_ROUTES,
     CONF_STOP_ID,
+    CONF_WALK_SPEED,
     DOMAIN,
 )
 from homeassistant.const import CONF_SCAN_INTERVAL
@@ -176,3 +185,117 @@ async def test_options_flow_survives_unreachable_api(
     assert result["step_id"] == "init"
     # Only the saved filter is left to offer, so it can be kept or cleared.
     assert _routes_offered(result) == ["10"]
+
+
+# --- Journey boards ---------------------------------------------------------
+
+
+def build_journey_entry(**options) -> MockConfigEntry:
+    """Create a journey board entry, which holds no stop ID at all."""
+    return MockConfigEntry(
+        domain=DOMAIN,
+        title="Home → Work",
+        data={
+            CONF_BOARD: BOARD_JOURNEY,
+            CONF_ORIGIN_ENTITY: "person.romi",
+            CONF_ORIGIN_NAME: "Home",
+            CONF_DESTINATION_ENTITY: "zone.work",
+            CONF_DESTINATION_NAME: "Work",
+        },
+        options={
+            CONF_MODES: ["bus"],
+            CONF_ROUTES: [],
+            CONF_SCAN_INTERVAL: 5,
+            CONF_WALK_SPEED: 4.8,
+            CONF_BIKE_SPEED: 18.0,
+            CONF_BIKE_OPTIMIZE: "quick",
+            **options,
+        },
+        unique_id="journey:person.romi|zone.work",
+    )
+
+
+@pytest.fixture(name="journey_api")
+def journey_api_fixture():
+    """Patch the API client used by the journey coordinator."""
+    with patch("custom_components.peatus.coordinator.PeatusApi") as mock:
+        client = mock.return_value
+        client.async_plan = AsyncMock(return_value=[])
+        client.async_plan_walk = AsyncMock(return_value=None)
+        client.async_plan_bicycle = AsyncMock(return_value=None)
+        yield client
+
+
+async def setup_journey(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """Place both ends and set up a journey entry."""
+    hass.states.async_set("person.romi", "home", {"latitude": 59.35, "longitude": 24.6})
+    hass.states.async_set("zone.work", "1", {"latitude": 59.39, "longitude": 24.72})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+async def test_journey_options_never_ask_the_feed_for_routes(
+    hass: HomeAssistant, journey_api, flow_api
+) -> None:
+    """A journey has no stop to list lines from, and asking would fail.
+
+    The stop board's form re-reads its stop to offer every line calling there.
+    A journey entry holds no stop ID, so taking that path would raise KeyError
+    before the form could even be shown.
+    """
+    entry = build_journey_entry()
+    await setup_journey(hass, entry)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "journey_options"
+    flow_api.async_get_stop.assert_not_awaited()
+
+
+async def test_journey_options_keep_the_chosen_lines_offered(
+    hass: HomeAssistant, journey_api, flow_api
+) -> None:
+    """The lines already chosen are the ones the selector lists."""
+    entry = build_journey_entry(**{CONF_ROUTES: ["18", "1"]})
+    await setup_journey(hass, entry)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    selector = result["data_schema"].schema[CONF_ROUTES].config
+    assert list(selector["options"]) == ["1", "18"]
+    # Typing a line the board has never seen must still be possible.
+    assert selector["custom_value"] is True
+
+
+async def test_journey_options_round_trip(
+    hass: HomeAssistant, journey_api, flow_api
+) -> None:
+    """Every journey setting is saved, and nothing else is."""
+    entry = build_journey_entry()
+    await setup_journey(hass, entry)
+
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            CONF_MODES: ["rail"],
+            CONF_ROUTES: ["R12"],
+            CONF_SCAN_INTERVAL: 9,
+            CONF_WALK_SPEED: 6.0,
+            CONF_BIKE_SPEED: 22.5,
+            CONF_BIKE_OPTIMIZE: "flat",
+        },
+    )
+    await hass.async_block_till_done()
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert dict(entry.options) == {
+        CONF_MODES: ["rail"],
+        CONF_ROUTES: ["R12"],
+        CONF_SCAN_INTERVAL: 9,
+        CONF_WALK_SPEED: 6.0,
+        CONF_BIKE_SPEED: 22.5,
+        CONF_BIKE_OPTIMIZE: "flat",
+    }

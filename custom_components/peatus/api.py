@@ -12,9 +12,16 @@ from aiohttp import ClientError, ClientSession
 
 from .const import (
     API_URL,
+    DEFAULT_BIKE_OPTIMIZE,
+    DEFAULT_BIKE_SPEED,
+    DEFAULT_WALK_SPEED,
     GEOCODER_URL,
+    MODE_BICYCLE,
     MODE_BUS,
     MODE_TROLLEYBUS,
+    MODE_WAIT,
+    MODE_WALK,
+    PLAN_MODES,
     SEARCH_LIMIT,
     TIME_RANGE,
     TROLLEYBUS_MARKER,
@@ -96,6 +103,111 @@ class Departure:
     ride_seconds: int | None = None
 
 
+@dataclass(slots=True)
+class Leg:
+    """One segment of a planned journey: a walk, a ride, or a wait between them.
+
+    Legs tile their itinerary exactly — each starts where the previous one
+    ended — so a bar drawn from their durations leaves no gap to account for.
+    """
+
+    #: ``walk``, ``bicycle``, ``wait``, or a classified transit mode
+    #: (``bus``, ``trolleybus``, ``tram``, ``rail``, ``ferry``). Always lower
+    #: case, spelled the same way a departure's mode is.
+    mode: str
+    #: Absolute epoch seconds. The feed answers in milliseconds.
+    start_timestamp: int
+    end_timestamp: int
+    #: Seconds this leg lasts, derived from its own two timestamps rather than
+    #: read from the feed's separate float, which is what guarantees the legs
+    #: of an itinerary sum to its span.
+    duration: int
+    #: Metres travelled, rounded. ``None`` on a wait, which goes nowhere.
+    distance: int | None
+    from_name: str | None
+    from_stop_id: str | None
+    from_stop_code: str | None
+    to_name: str | None
+    to_stop_id: str | None
+    to_stop_code: str | None
+    route_short_name: str | None
+    route_long_name: str | None
+    #: Where the vehicle is signed for. Read from the trip: legs have no
+    #: headsign field of their own.
+    headsign: str | None
+    trip_id: str | None
+    #: ``#rrggbb``. The feed publishes bare hex, which CSS will not accept.
+    color: str | None
+    text_color: str | None
+    realtime: bool
+
+    @property
+    def transit(self) -> bool:
+        """Return whether this leg is a ride rather than a walk or a wait."""
+        return self.mode not in (MODE_WALK, MODE_BICYCLE, MODE_WAIT)
+
+
+@dataclass(slots=True)
+class Itinerary:
+    """One complete door-to-door plan: a single row of a journey board."""
+
+    #: When the traveller has to leave, and when they arrive. Epoch seconds.
+    start_timestamp: int
+    end_timestamp: int
+    duration: int
+    #: Both derived from the legs rather than read from the feed's own totals,
+    #: so they can never disagree with a bar drawn from the same legs.
+    walk_seconds: int
+    wait_seconds: int
+    #: The feed's own figure: it measures the street geometry more finely than
+    #: the per-leg distances do, so this one is not derivable.
+    walk_distance: int
+    legs: list[Leg]
+
+    @property
+    def rides(self) -> list[Leg]:
+        """Return the transit legs, in order."""
+        return [leg for leg in self.legs if leg.transit]
+
+    @property
+    def transfers(self) -> int:
+        """Return how many times the traveller changes vehicle.
+
+        The feed has no transfers field, so it is one fewer than the number of
+        rides, floored at zero for a plan that never boards anything.
+        """
+        return max(0, len(self.rides) - 1)
+
+    @property
+    def first_ride(self) -> Leg | None:
+        """Return the first transit leg, or ``None`` if nothing is boarded."""
+        return next(iter(self.rides), None)
+
+    @property
+    def routes(self) -> list[str]:
+        """Return the line numbers ridden, in order, repeats kept."""
+        return [ride.route_short_name for ride in self.rides if ride.route_short_name]
+
+    @property
+    def modes(self) -> list[str]:
+        """Return the modes ridden, in order, repeats kept."""
+        return [ride.mode for ride in self.rides]
+
+
+@dataclass(slots=True)
+class PlanOptions:
+    """Routing preferences, in the units the user sets them in.
+
+    Grouped rather than passed one by one so the planning call stays within a
+    sane number of arguments. Speeds are km/h here and become metres per second
+    only where the request is built.
+    """
+
+    walk_speed_kmh: float = DEFAULT_WALK_SPEED
+    bike_speed_kmh: float = DEFAULT_BIKE_SPEED
+    bike_optimize: str = DEFAULT_BIKE_OPTIMIZE
+
+
 _STOP_FIELDS = "gtfsId name code desc zoneId vehicleMode lat lon routes{shortName}"
 
 SEARCH_STOPS_QUERY = f"""
@@ -165,10 +277,67 @@ query Departures($id: String!, $count: Int!, $timeRange: Int!) {
 """
 
 
+#: A leg's own fields. ``duration`` is deliberately not requested: it is a
+#: float of the same span the two timestamps already describe, and deriving it
+#: from them is what makes the legs of an itinerary tile it exactly. Legs carry
+#: no headsign of their own, so it comes from the trip.
+_LEG_FIELDS = """
+      mode
+      startTime
+      endTime
+      distance
+      realTime
+      from { name stop { gtfsId code } }
+      to { name stop { gtfsId code } }
+      route { shortName longName mode color textColor }
+      trip { gtfsId tripHeadsign }
+"""
+
+#: No date or time is sent, so the feed plans from now, which is what a live
+#: board wants. ``arriveBy`` with a time is the obvious later extension.
+PLAN_QUERY = f"""
+query Plan(
+  $fromLat: Float!
+  $fromLon: Float!
+  $toLat: Float!
+  $toLon: Float!
+  $count: Int!
+  $modes: [TransportMode]
+  $walkSpeed: Float
+  $bikeSpeed: Float
+  $optimize: OptimizeType
+) {{
+  plan(
+    from: {{lat: $fromLat, lon: $fromLon}}
+    to: {{lat: $toLat, lon: $toLon}}
+    numItineraries: $count
+    transportModes: $modes
+    walkSpeed: $walkSpeed
+    bikeSpeed: $bikeSpeed
+    optimize: $optimize
+    omitCanceled: true
+  ) {{
+    itineraries {{
+      startTime
+      endTime
+      walkDistance
+      legs {{ {_LEG_FIELDS} }}
+    }}
+  }}
+}}
+"""
+
 #: Punctuation and underscores are operators to the Lucene query parser behind
 #: ``stops(name:)``, not characters to match, so the name-search fallback
 #: replaces them with the spaces the parser treats as term separators.
 _QUERY_OPERATORS = re.compile(r"[\W_]+", re.UNICODE)
+
+#: Six hex digits and nothing else. The feed publishes route colours bare and
+#: lower case ("de2c42"), and their text colours upper case ("FFFFFF").
+_HEX_COLOR = re.compile(r"[0-9a-fA-F]{6}")
+
+#: Metres per second per km/h, the only place the two units meet.
+_KMH_TO_MS = 3.6
 
 
 def route_sort_key(short_name: str) -> tuple[int, str, int, str]:
@@ -242,6 +411,149 @@ def _ride_seconds(
                 return None
             return arrival - departure
     return None
+
+
+def _color(raw: str | None) -> str | None:
+    """Return a route colour as ``#rrggbb``, or ``None`` if it has none.
+
+    A value the feed spells some other way is dropped rather than passed
+    through, because the only thing that ever reads it is a stylesheet.
+    """
+    if not raw:
+        return None
+    value = raw.strip().removeprefix("#")
+    if not _HEX_COLOR.fullmatch(value):
+        return None
+    return f"#{value.lower()}"
+
+
+def _leg_mode(raw: dict[str, Any], route: dict[str, Any]) -> str:
+    """Return the classified mode of one planned leg.
+
+    Rides are classified the same way a departure is, so a trolleybus the feed
+    calls a bus is named the same on both kinds of board. The two ways of
+    moving under your own power are named by the plan itself.
+    """
+    if route:
+        classified = _classify_mode(
+            route.get("mode") or raw.get("mode"), route.get("longName")
+        )
+        if classified is not None:
+            return classified
+    mode = str(raw.get("mode") or "").upper()
+    return MODE_BICYCLE if mode == "BICYCLE" else MODE_WALK
+
+
+def _parse_leg(raw: dict[str, Any]) -> Leg | None:
+    """Convert one raw leg into a :class:`Leg`, or ``None`` if it has no span."""
+    start, end = raw.get("startTime"), raw.get("endTime")
+    if start is None or end is None:
+        return None
+
+    route = raw.get("route") or {}
+    trip = raw.get("trip") or {}
+    origin = raw.get("from") or {}
+    destination = raw.get("to") or {}
+    origin_stop = origin.get("stop") or {}
+    destination_stop = destination.get("stop") or {}
+    distance = raw.get("distance")
+
+    start_timestamp = start // 1000
+    end_timestamp = end // 1000
+    return Leg(
+        mode=_leg_mode(raw, route),
+        start_timestamp=start_timestamp,
+        end_timestamp=end_timestamp,
+        duration=max(0, end_timestamp - start_timestamp),
+        distance=round(distance) if distance is not None else None,
+        from_name=origin.get("name"),
+        from_stop_id=origin_stop.get("gtfsId"),
+        from_stop_code=origin_stop.get("code"),
+        to_name=destination.get("name"),
+        to_stop_id=destination_stop.get("gtfsId"),
+        to_stop_code=destination_stop.get("code"),
+        route_short_name=route.get("shortName"),
+        route_long_name=route.get("longName"),
+        headsign=trip.get("tripHeadsign"),
+        trip_id=trip.get("gtfsId"),
+        color=_color(route.get("color")),
+        text_color=_color(route.get("textColor")),
+        realtime=bool(raw.get("realTime")),
+    )
+
+
+def _wait(start_timestamp: int, end_timestamp: int) -> Leg:
+    """Return a waiting leg covering the time between two other legs."""
+    return Leg(
+        mode=MODE_WAIT,
+        start_timestamp=start_timestamp,
+        end_timestamp=end_timestamp,
+        duration=end_timestamp - start_timestamp,
+        distance=None,
+        from_name=None,
+        from_stop_id=None,
+        from_stop_code=None,
+        to_name=None,
+        to_stop_id=None,
+        to_stop_code=None,
+        route_short_name=None,
+        route_long_name=None,
+        headsign=None,
+        trip_id=None,
+        color=None,
+        text_color=None,
+        realtime=False,
+    )
+
+
+def _fill_gaps(legs: list[Leg], start: int, end: int) -> list[Leg]:
+    """Return ``legs`` with the time between them filled by waiting legs.
+
+    A plan with a transfer does not account for all of its own span: in a
+    measured example the legs covered 3650 of 4291 seconds, the missing 641
+    being exactly the waiting the feed reports as one per-itinerary total. That
+    total cannot be split back across two transfers, so the gaps are rebuilt
+    where they actually fall instead. Legs that already touch produce nothing,
+    and legs that overlap are left alone rather than given a negative wait.
+    """
+    filled: list[Leg] = []
+    previous = start
+    for leg in legs:
+        if leg.start_timestamp > previous:
+            filled.append(_wait(previous, leg.start_timestamp))
+        filled.append(leg)
+        previous = max(previous, leg.end_timestamp)
+    if end > previous:
+        filled.append(_wait(previous, end))
+    return filled
+
+
+def _parse_itinerary(raw: dict[str, Any]) -> Itinerary | None:
+    """Convert one raw itinerary into an :class:`Itinerary`.
+
+    Returns ``None`` for a plan with no usable legs, which a board cannot show.
+    """
+    start, end = raw.get("startTime"), raw.get("endTime")
+    if start is None or end is None:
+        return None
+    start_timestamp, end_timestamp = start // 1000, end // 1000
+
+    parsed = [leg for raw_leg in raw.get("legs") or [] if (leg := _parse_leg(raw_leg))]
+    if not parsed:
+        return None
+    parsed.sort(key=lambda leg: leg.start_timestamp)
+    legs = _fill_gaps(parsed, start_timestamp, end_timestamp)
+
+    walk_distance = raw.get("walkDistance") or 0
+    return Itinerary(
+        start_timestamp=start_timestamp,
+        end_timestamp=end_timestamp,
+        duration=max(0, end_timestamp - start_timestamp),
+        walk_seconds=sum(leg.duration for leg in legs if leg.mode == MODE_WALK),
+        wait_seconds=sum(leg.duration for leg in legs if leg.mode == MODE_WAIT),
+        walk_distance=round(walk_distance),
+        legs=legs,
+    )
 
 
 def _classify_mode(mode: str | None, long_name: str | None) -> str | None:
@@ -534,3 +846,91 @@ class PeatusApi:
         # OTP returns departures in order, but realtime delays can reorder them.
         departures.sort(key=lambda departure: departure.timestamp)
         return departures
+
+    async def _async_plan(
+        self,
+        origin: tuple[float, float],
+        destination: tuple[float, float],
+        count: int,
+        transport_modes: list[dict[str, str]],
+        options: PlanOptions,
+    ) -> list[Itinerary]:
+        """Plan journeys between two points for an explicit list of modes."""
+        data = await self._query(
+            PLAN_QUERY,
+            {
+                "fromLat": origin[0],
+                "fromLon": origin[1],
+                "toLat": destination[0],
+                "toLon": destination[1],
+                "count": count,
+                "modes": transport_modes,
+                # The only place km/h becomes the metres per second the feed
+                # wants; everything else in the integration speaks km/h.
+                "walkSpeed": options.walk_speed_kmh / _KMH_TO_MS,
+                "bikeSpeed": options.bike_speed_kmh / _KMH_TO_MS,
+                "optimize": options.bike_optimize.upper(),
+            },
+        )
+        plan = data.get("plan") or {}
+        itineraries = [
+            itinerary
+            for raw in plan.get("itineraries") or []
+            if (itinerary := _parse_itinerary(raw))
+        ]
+        # Near-identical plans are successive departures on the same line
+        # rather than duplicates, so they are all kept; only the order is made
+        # certain, the same way departures are.
+        itineraries.sort(key=lambda itinerary: itinerary.start_timestamp)
+        return itineraries
+
+    async def async_plan(
+        self,
+        origin: tuple[float, float],
+        destination: tuple[float, float],
+        count: int,
+        modes: list[str],
+        options: PlanOptions,
+    ) -> list[Itinerary]:
+        """Plan door-to-door journeys by public transport between two points.
+
+        ``modes`` are this integration's own mode names. They are translated to
+        the feed's enum, which has no trolleybus, so asking for trolleybuses
+        asks for buses and the caller separates the two afterwards.
+        """
+        asked = sorted({PLAN_MODES[mode] for mode in modes if mode in PLAN_MODES})
+        transport_modes = [{"mode": "WALK"}]
+        # An empty or unrecognised selection would otherwise plan a walk, so
+        # fall back to every service the feed knows.
+        transport_modes += [{"mode": mode} for mode in asked] or [{"mode": "TRANSIT"}]
+        return await self._async_plan(
+            origin, destination, count, transport_modes, options
+        )
+
+    async def async_plan_walk(
+        self,
+        origin: tuple[float, float],
+        destination: tuple[float, float],
+        options: PlanOptions,
+    ) -> Itinerary | None:
+        """Plan the walk between two points, if one is possible.
+
+        Only ever one answer: walking somewhere is a single route rather than a
+        choice between departures.
+        """
+        planned = await self._async_plan(
+            origin, destination, 1, [{"mode": "WALK"}], options
+        )
+        return next(iter(planned), None)
+
+    async def async_plan_bicycle(
+        self,
+        origin: tuple[float, float],
+        destination: tuple[float, float],
+        options: PlanOptions,
+    ) -> Itinerary | None:
+        """Plan the ride between two points, if one is possible."""
+        planned = await self._async_plan(
+            origin, destination, 1, [{"mode": "BICYCLE"}], options
+        )
+        return next(iter(planned), None)

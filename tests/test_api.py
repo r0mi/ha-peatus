@@ -7,7 +7,10 @@ from aiohttp import ClientError
 
 from custom_components.peatus.api import (
     PeatusApi,
+    PeatusApiError,
+    PlanOptions,
     _classify_mode,
+    _color,
     _feature_stop_name,
     _gtfs_id_from_feature,
     _ride_seconds,
@@ -433,3 +436,347 @@ async def test_get_ride_seconds_without_trips_asks_nothing(api, session) -> None
     """An empty board makes no request at all."""
     assert await api.async_get_ride_seconds([], "estonia:A", "estonia:B") == {}
     assert session.posted is None
+
+
+# --- Journey planning -------------------------------------------------------
+
+
+def _plan_leg(mode, start, end, route=None, **kwargs):
+    """Build one raw leg of a plan, in the shape the feed publishes."""
+    leg = {
+        "mode": mode,
+        "startTime": start * 1000,
+        "endTime": end * 1000,
+        "distance": 1234.56,
+        "realTime": False,
+        "from": {"name": "Vana-Pääsküla", "stop": None},
+        "to": {"name": "Järve", "stop": None},
+        "route": None,
+        "trip": None,
+    }
+    if route is not None:
+        leg["route"] = {
+            "shortName": route,
+            "longName": "Viru keskus - Urda",
+            "mode": mode,
+            "color": "de2c42",
+            "textColor": "FFFFFF",
+        }
+        leg["trip"] = {"gtfsId": "estonia:17206", "tripHeadsign": "Viru keskus"}
+        leg["from"]["stop"] = {"gtfsId": "estonia:952", "code": "04401-1"}
+    return {**leg, **kwargs}
+
+
+def _plan(itineraries):
+    """Wrap raw itineraries in the envelope the feed returns."""
+    return {"data": {"plan": {"itineraries": itineraries}}}
+
+
+def _itinerary(legs, walk_distance=796):
+    """Build one raw itinerary spanning its legs."""
+    return {
+        "startTime": min(leg["startTime"] for leg in legs),
+        "endTime": max(leg["endTime"] for leg in legs),
+        "walkDistance": walk_distance,
+        "legs": legs,
+    }
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("de2c42", "#de2c42"),
+        ("FFFFFF", "#ffffff"),
+        ("#abc123", "#abc123"),
+        (None, None),
+        ("", None),
+        ("red", None),
+        ("12345", None),
+    ],
+)
+async def test_color_normalises_to_css(raw, expected) -> None:
+    """Route colours reach the frontend as CSS, or not at all."""
+    assert _color(raw) == expected
+
+
+async def test_plan_parses_a_single_ride(api, session) -> None:
+    """A walk, a ride and a walk come back classified and in seconds."""
+    session.graphql_response = _plan(
+        [
+            _itinerary(
+                [
+                    _plan_leg("WALK", 1000, 1300),
+                    _plan_leg("BUS", 1300, 2200, route="18"),
+                    _plan_leg("WALK", 2200, 2500),
+                ]
+            )
+        ]
+    )
+
+    itineraries = await api.async_plan(
+        (59.35, 24.63), (59.39, 24.72), 3, ["bus"], PlanOptions()
+    )
+
+    assert len(itineraries) == 1
+    itinerary = itineraries[0]
+    # Milliseconds on the wire, seconds everywhere in the integration.
+    assert itinerary.start_timestamp == 1000
+    assert itinerary.end_timestamp == 2500
+    assert [leg.mode for leg in itinerary.legs] == ["walk", "bus", "walk"]
+    ride = itinerary.first_ride
+    assert ride.route_short_name == "18"
+    # Legs carry no headsign of their own; it comes off the trip.
+    assert ride.headsign == "Viru keskus"
+    assert ride.color == "#de2c42"
+    assert ride.text_color == "#ffffff"
+    assert ride.from_stop_code == "04401-1"
+    assert itinerary.transfers == 0
+    assert itinerary.routes == ["18"]
+
+
+async def test_plan_legs_tile_the_itinerary(api, session) -> None:
+    """The legs of a plan account for every second of it."""
+    session.graphql_response = _plan(
+        [
+            _itinerary(
+                [
+                    _plan_leg("WALK", 1000, 1300),
+                    _plan_leg("BUS", 1300, 2200, route="18"),
+                    _plan_leg("WALK", 2200, 2500),
+                ]
+            )
+        ]
+    )
+
+    itinerary = (
+        await api.async_plan((1.0, 2.0), (3.0, 4.0), 3, ["bus"], PlanOptions())
+    )[0]
+
+    assert sum(leg.duration for leg in itinerary.legs) == itinerary.duration
+
+
+async def test_plan_fills_a_transfer_gap_with_a_wait(api, session) -> None:
+    """Waiting for a connection becomes a leg of its own, where it falls.
+
+    The feed reports waiting only as one per-itinerary total, which cannot be
+    split back across transfers, so the gap is rebuilt where it actually is.
+    """
+    session.graphql_response = _plan(
+        [
+            _itinerary(
+                [
+                    _plan_leg("WALK", 1000, 1300),
+                    _plan_leg("BUS", 1300, 2200, route="18"),
+                    _plan_leg("WALK", 2200, 2320),
+                    # 641 seconds nothing accounts for: the measured gap.
+                    _plan_leg("BUS", 2961, 3900, route="34"),
+                    _plan_leg("WALK", 3900, 4100),
+                ]
+            )
+        ]
+    )
+
+    itinerary = (
+        await api.async_plan((1.0, 2.0), (3.0, 4.0), 3, ["bus"], PlanOptions())
+    )[0]
+
+    assert [leg.mode for leg in itinerary.legs] == [
+        "walk",
+        "bus",
+        "walk",
+        "wait",
+        "bus",
+        "walk",
+    ]
+    wait = itinerary.legs[3]
+    assert wait.duration == 641
+    assert wait.route_short_name is None
+    assert itinerary.wait_seconds == 641
+    assert itinerary.transfers == 1
+    # The whole point of the wait leg: the plan still tiles.
+    assert sum(leg.duration for leg in itinerary.legs) == itinerary.duration
+
+
+async def test_plan_fills_each_gap_separately(api, session) -> None:
+    """Two transfers produce two waits, which one total could never describe."""
+    session.graphql_response = _plan(
+        [
+            _itinerary(
+                [
+                    _plan_leg("BUS", 1000, 1300, route="18"),
+                    _plan_leg("BUS", 1400, 1700, route="34"),
+                    _plan_leg("BUS", 1900, 2200, route="55"),
+                ]
+            )
+        ]
+    )
+
+    itinerary = (
+        await api.async_plan((1.0, 2.0), (3.0, 4.0), 3, ["bus"], PlanOptions())
+    )[0]
+
+    waits = [leg.duration for leg in itinerary.legs if leg.mode == "wait"]
+    assert waits == [100, 200]
+    assert sum(leg.duration for leg in itinerary.legs) == itinerary.duration
+
+
+async def test_plan_adds_no_wait_when_legs_touch(api, session) -> None:
+    """A plan with no waiting gets no waiting legs."""
+    session.graphql_response = _plan(
+        [
+            _itinerary(
+                [
+                    _plan_leg("WALK", 1000, 1300),
+                    _plan_leg("BUS", 1300, 2200, route="18"),
+                ]
+            )
+        ]
+    )
+
+    itinerary = (
+        await api.async_plan((1.0, 2.0), (3.0, 4.0), 3, ["bus"], PlanOptions())
+    )[0]
+
+    assert [leg.mode for leg in itinerary.legs] == ["walk", "bus"]
+
+
+async def test_plan_clamps_overlapping_legs(api, session) -> None:
+    """Legs that overlap produce no negative wait."""
+    session.graphql_response = _plan(
+        [
+            _itinerary(
+                [
+                    _plan_leg("BUS", 1000, 1600, route="18"),
+                    _plan_leg("BUS", 1400, 2000, route="34"),
+                ]
+            )
+        ]
+    )
+
+    itinerary = (
+        await api.async_plan((1.0, 2.0), (3.0, 4.0), 3, ["bus"], PlanOptions())
+    )[0]
+
+    assert [leg.mode for leg in itinerary.legs] == ["bus", "bus"]
+    assert all(leg.duration >= 0 for leg in itinerary.legs)
+
+
+async def test_plan_classifies_a_trolleybus_ride(api, session) -> None:
+    """A trolleybus the feed calls a bus is named the same as on a stop board."""
+    leg = _plan_leg("BUS", 1000, 2000, route="3")
+    leg["route"]["longName"] = "Mustamäe - Kaubamaja (trollibuss)"
+    session.graphql_response = _plan([_itinerary([leg])])
+
+    itinerary = (
+        await api.async_plan((1.0, 2.0), (3.0, 4.0), 3, ["trolleybus"], PlanOptions())
+    )[0]
+
+    assert itinerary.modes == ["trolleybus"]
+
+
+@pytest.mark.parametrize(
+    ("modes", "expected"),
+    [
+        (["bus"], ["WALK", "BUS"]),
+        # The feed has no trolleybus, so asking for one asks for a bus...
+        (["trolleybus"], ["WALK", "BUS"]),
+        # ...and asking for both must not ask for BUS twice.
+        (["bus", "trolleybus"], ["WALK", "BUS"]),
+        (["rail", "tram"], ["WALK", "RAIL", "TRAM"]),
+        # Nothing recognised would otherwise plan a walk.
+        ([], ["WALK", "TRANSIT"]),
+    ],
+)
+async def test_plan_maps_modes_onto_the_feeds_enum(
+    api, session, modes, expected
+) -> None:
+    """This integration's mode names are translated for the feed."""
+    session.graphql_response = _plan([])
+
+    await api.async_plan((1.0, 2.0), (3.0, 4.0), 3, modes, PlanOptions())
+
+    assert [mode["mode"] for mode in session.posted["variables"]["modes"]] == expected
+
+
+async def test_plan_sends_speeds_in_metres_per_second(api, session) -> None:
+    """Speeds are set in km/h and converted only where the request is built."""
+    session.graphql_response = _plan([])
+
+    await api.async_plan(
+        (1.0, 2.0),
+        (3.0, 4.0),
+        3,
+        ["bus"],
+        PlanOptions(walk_speed_kmh=4.8, bike_speed_kmh=18.0, bike_optimize="flat"),
+    )
+
+    variables = session.posted["variables"]
+    assert variables["walkSpeed"] == pytest.approx(1.3333, abs=0.0001)
+    assert variables["bikeSpeed"] == pytest.approx(5.0)
+    assert variables["optimize"] == "FLAT"
+
+
+async def test_plan_orders_itineraries_by_departure(api, session) -> None:
+    """Plans are ordered by when the traveller has to leave."""
+    session.graphql_response = _plan(
+        [
+            _itinerary([_plan_leg("BUS", 3000, 3600, route="18")]),
+            _itinerary([_plan_leg("BUS", 1000, 1600, route="18")]),
+        ]
+    )
+
+    itineraries = await api.async_plan(
+        (1.0, 2.0), (3.0, 4.0), 3, ["bus"], PlanOptions()
+    )
+
+    assert [itinerary.start_timestamp for itinerary in itineraries] == [1000, 3000]
+
+
+async def test_plan_skips_itineraries_without_legs(api, session) -> None:
+    """A plan with nothing in it is not a plan a board can show."""
+    session.graphql_response = _plan([{"startTime": 1000, "endTime": 2000, "legs": []}])
+
+    assert await api.async_plan((1.0, 2.0), (3.0, 4.0), 3, ["bus"], PlanOptions()) == []
+
+
+async def test_plan_walk_asks_only_to_walk(api, session) -> None:
+    """The walking plan is a single answer, because walking is one route."""
+    session.graphql_response = _plan([_itinerary([_plan_leg("WALK", 1000, 7000)])])
+
+    itinerary = await api.async_plan_walk((1.0, 2.0), (3.0, 4.0), PlanOptions())
+
+    assert [mode["mode"] for mode in session.posted["variables"]["modes"]] == ["WALK"]
+    assert itinerary is not None
+    assert [leg.mode for leg in itinerary.legs] == ["walk"]
+
+
+async def test_plan_bicycle_keeps_the_walk_to_the_bike(api, session) -> None:
+    """A cycling plan starts with the few steps to the bicycle."""
+    session.graphql_response = _plan(
+        [_itinerary([_plan_leg("WALK", 1000, 1038), _plan_leg("BICYCLE", 1038, 2880)])]
+    )
+
+    itinerary = await api.async_plan_bicycle((1.0, 2.0), (3.0, 4.0), PlanOptions())
+
+    assert [mode["mode"] for mode in session.posted["variables"]["modes"]] == [
+        "BICYCLE"
+    ]
+    assert [leg.mode for leg in itinerary.legs] == ["walk", "bicycle"]
+    # Cycling is not a ride on a service, so it never counts as a transfer.
+    assert itinerary.transfers == 0
+    assert itinerary.rides == []
+
+
+async def test_plan_walk_returns_none_when_unroutable(api, session) -> None:
+    """Two places with no route between them simply have no plan."""
+    session.graphql_response = _plan([])
+
+    assert await api.async_plan_walk((1.0, 2.0), (3.0, 4.0), PlanOptions()) is None
+
+
+async def test_plan_wraps_api_errors(api, session) -> None:
+    """A failing plan raises the integration's own error."""
+    session.graphql_response = {"errors": [{"message": "boom"}]}
+
+    with pytest.raises(PeatusApiError):
+        await api.async_plan((1.0, 2.0), (3.0, 4.0), 3, ["bus"], PlanOptions())

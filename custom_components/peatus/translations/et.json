@@ -2,11 +2,12 @@
   "config": {
     "step": {
       "user": {
-        "title": "Lisa väljumiste tabloo",
-        "description": "Vali, kuidas soovid peatust tuvastada.",
+        "title": "Lisa tabloo",
+        "description": "Jälgi ühe peatuse väljumisi või planeeri teekond kahe koha vahel.",
         "menu_options": {
           "search": "Otsi peatust nime järgi",
-          "gtfs_id": "Sisesta GTFS peatuse ID"
+          "gtfs_id": "Sisesta GTFS peatuse ID",
+          "journey": "Planeeri teekond kahe koha vahel"
         }
       },
       "search": {
@@ -51,16 +52,38 @@
           "routes": "Liinid",
           "scan_interval": "Uuendamise intervall"
         }
+      },
+      "journey": {
+        "title": "Vali, kus teekond kulgeb",
+        "description": "Vali mõlemasse otsa tsoon, inimene või asukohaandur. Mõlemad otsad on kohad, mitte peatused, seega sisaldab plaan ka jalutuskäiku esimesse peatusesse ja viimasest peatusest. Eelista inimest asukohaandurile: inimene järgib seda andurit, mis parasjagu asukohta edastab, samas kui andur, mis teab ainult võrku, ei avalda koordinaate ja selle järgi ei saa teekonda planeerida.",
+        "data": {
+          "origin_entity": "Kust",
+          "destination_entity": "Kuhu"
+        }
+      },
+      "journey_settings": {
+        "title": "Teekonna seaded",
+        "description": "Pakutakse ainult valitud transpordiliikidega teekondi. Tallinna trollibussiliinid avaldatakse andmeallikas bussidena, seetõttu on need siin eraldi loetletud. Jäta liinid tühjaks, et saada kõiki marsruute, või sisesta liininumbrid, millega oled nõus sõitma — teekonda pakutakse ainult siis, kui kõik selle sõidud kasutavad neid liine. Kõndimis- ja rattakiirus on tänaval suurim, mitte keskmine kiirus, seega määra need veidi oma tegelikust tempost madalamaks. Teekonna planeerimine koormab andmeallikat tunduvalt rohkem kui sõiduplaani lugemine, seega päri seda harva.",
+        "data": {
+          "modes": "Transpordiliigid",
+          "routes": "Liinid",
+          "scan_interval": "Uuendamise intervall",
+          "walk_speed": "Kõndimiskiirus",
+          "bike_speed": "Rattasõidu kiirus",
+          "bike_optimize": "Rattamarsruudi eelistus"
+        }
       }
     },
     "error": {
       "cannot_connect": "Ei õnnestunud ühenduda peatus.ee-ga. Palun proovi uuesti.",
       "no_stops_found": "Ükski peatus ei vastanud sellele nimele.",
       "unknown_stop": "Sellise GTFS ID-ga peatust ei leidu.",
-      "same_stop": "Sihtpeatus peab erinema väljumispeatusest."
+      "same_stop": "Sihtpeatus peab erinema väljumispeatusest.",
+      "same_place": "Sihtkoht peab erinema lähtekohast."
     },
     "abort": {
-      "already_configured": "See peatuse ja sihtkoha kombinatsioon on juba seadistatud."
+      "already_configured": "See peatuse ja sihtkoha kombinatsioon on juba seadistatud.",
+      "already_configured_journey": "Nende kahe koha vaheline teekond on juba seadistatud."
     }
   },
   "options": {
@@ -73,6 +96,18 @@
           "scan_interval": "Uuendamise intervall"
         },
         "description": "Näidatakse ainult valitud transpordiliike. Tallinna trollibussiliinid on andmeallikas avaldatud bussidena, seetõttu on need siin eraldi välja toodud. Jäta liinid tühjaks, et näha kõiki peatuses {stop} peatuvaid liine, või vali need, millega sõidad — harva käiva liini filtreerimisel tuleb igal uuendusel rohkem väljumisi pärida, et neid piisavalt leida. Tihedamini kui kord minutis küsimine ei anna lisainfot, sest sõiduplaani andmed ei uuene kiiremini."
+      },
+      "journey_options": {
+        "title": "Teekonna seaded",
+        "data": {
+          "modes": "Transpordiliigid",
+          "routes": "Liinid",
+          "scan_interval": "Uuendamise intervall",
+          "walk_speed": "Kõndimiskiirus",
+          "bike_speed": "Rattasõidu kiirus",
+          "bike_optimize": "Rattamarsruudi eelistus"
+        },
+        "description": "Pakutakse ainult valitud transpordiliikidega teekondi. Tallinna trollibussiliinid avaldatakse andmeallikas bussidena, seetõttu on need siin eraldi loetletud. Jäta liinid tühjaks, et saada kõiki marsruute, või sisesta liininumbrid, millega oled nõus sõitma — teekonda pakutakse ainult siis, kui kõik selle sõidud kasutavad neid liine. Kõndimis- ja rattakiirus on tänaval suurim, mitte keskmine kiirus, seega määra need veidi oma tegelikust tempost madalamaks. Teekonna planeerimine koormab andmeallikat tunduvalt rohkem kui sõiduplaani lugemine, seega päri seda harva."
       }
     }
   },
@@ -83,6 +118,15 @@
       },
       "departure": {
         "name": "Väljumine {index}"
+      },
+      "journey": {
+        "name": "Teekond {index}"
+      },
+      "walk": {
+        "name": "Jalgsi"
+      },
+      "ride": {
+        "name": "Rattaga"
       }
     }
   },
@@ -94,6 +138,14 @@
         "tram": "Tramm",
         "rail": "Rong",
         "ferry": "Parvlaev"
+      }
+    },
+    "bike_optimize": {
+      "options": {
+        "quick": "Kiireim",
+        "safe": "Turvalisim",
+        "flat": "Tasaseim",
+        "greenways": "Vaiksed tänavad ja teed"
       }
     }
   }

@@ -2,11 +2,12 @@
   "config": {
     "step": {
       "user": {
-        "title": "Add a departure board",
-        "description": "Choose how to identify the stop you want to watch.",
+        "title": "Add a board",
+        "description": "Watch the departures from one stop, or plan a journey between two places.",
         "menu_options": {
           "search": "Search for a stop by name",
-          "gtfs_id": "Enter a GTFS stop ID"
+          "gtfs_id": "Enter a GTFS stop ID",
+          "journey": "Plan a journey between two places"
         }
       },
       "search": {
@@ -51,16 +52,38 @@
           "routes": "Lines",
           "scan_interval": "Update interval"
         }
+      },
+      "journey": {
+        "title": "Choose where the journey runs",
+        "description": "Pick a zone, person or device tracker at each end. Both ends are places rather than stops, so the plan includes the walk to the first stop and from the last one. Prefer a person over a raw device tracker: a person follows whichever tracker is actually reporting a position, while a tracker that only knows which network you are on publishes no coordinates and cannot be planned from.",
+        "data": {
+          "origin_entity": "From",
+          "destination_entity": "To"
+        }
+      },
+      "journey_settings": {
+        "title": "Journey settings",
+        "description": "Only journeys using the selected transport modes are offered. Tallinn's trolleybus routes are published as buses by the data source, so they are listed separately here. Leave the lines empty to be offered any route, or enter the line numbers you are willing to travel with — a journey is only offered when every ride on it uses one of them. Walking and cycling speeds are a maximum along the street rather than an average, so set them a little below your real pace. Planning a journey costs the data source far more than reading a timetable, so poll it sparingly.",
+        "data": {
+          "modes": "Transport modes",
+          "routes": "Lines",
+          "scan_interval": "Update interval",
+          "walk_speed": "Walking speed",
+          "bike_speed": "Cycling speed",
+          "bike_optimize": "Cycling route preference"
+        }
       }
     },
     "error": {
       "cannot_connect": "Could not reach peatus.ee. Please try again.",
       "no_stops_found": "No stops matched that name.",
       "unknown_stop": "No stop exists with that GTFS ID.",
-      "same_stop": "The destination must be different from the departure stop."
+      "same_stop": "The destination must be different from the departure stop.",
+      "same_place": "The destination must be different from the starting place."
     },
     "abort": {
-      "already_configured": "This stop and destination combination is already set up."
+      "already_configured": "This stop and destination combination is already set up.",
+      "already_configured_journey": "A journey between these two places is already set up."
     }
   },
   "options": {
@@ -73,6 +96,18 @@
           "scan_interval": "Update interval"
         },
         "description": "Only the selected transport modes are shown. Tallinn's trolleybus routes are published as buses by the data source, so they are listed separately here. Leave the lines empty to show every route calling at {stop}, or pick the ones you travel with — filtering to a rarely served line makes each update fetch more departures to find enough of them. Polling more often than once a minute is not useful, as the timetable data does not change faster than that."
+      },
+      "journey_options": {
+        "title": "Journey settings",
+        "data": {
+          "modes": "Transport modes",
+          "routes": "Lines",
+          "scan_interval": "Update interval",
+          "walk_speed": "Walking speed",
+          "bike_speed": "Cycling speed",
+          "bike_optimize": "Cycling route preference"
+        },
+        "description": "Only journeys using the selected transport modes are offered. Tallinn's trolleybus routes are published as buses by the data source, so they are listed separately here. Leave the lines empty to be offered any route, or enter the line numbers you are willing to travel with — a journey is only offered when every ride on it uses one of them. Walking and cycling speeds are a maximum along the street rather than an average, so set them a little below your real pace. Planning a journey costs the data source far more than reading a timetable, so poll it sparingly."
       }
     }
   },
@@ -83,6 +118,15 @@
       },
       "departure": {
         "name": "Departure {index}"
+      },
+      "journey": {
+        "name": "Journey {index}"
+      },
+      "walk": {
+        "name": "Walking"
+      },
+      "ride": {
+        "name": "Cycling"
       }
     }
   },
@@ -94,6 +138,14 @@
         "tram": "Tram",
         "rail": "Train",
         "ferry": "Ferry"
+      }
+    },
+    "bike_optimize": {
+      "options": {
+        "quick": "Fastest",
+        "safe": "Safest",
+        "flat": "Flattest",
+        "greenways": "Quiet streets and paths"
       }
     }
   }
