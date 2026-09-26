@@ -1,6 +1,6 @@
 <img alt="Peatus.ee Public Transport for Home Assistant" src="https://raw.githubusercontent.com/r0mi/ha-peatus/main/custom_components/peatus/brand/dark_logo.png" width="420">
 
-# Peatus.ee Public Transport for Home Assistant
+# Peatus.ee public transport for Home Assistant
 
 [![hacs][hacs-badge]][hacs]
 [![Release][release-badge]][releases]
@@ -16,11 +16,11 @@ Tartu and Pärnu city lines, county buses, Elron trains and ferries.
 
 ## Features
 
-Two kinds of board:
+Two kinds of boards:
 
-- A **stop board** watches one stop and lists its next departures.
-- A **journey board** plans a door-to-door trip between two places you already
-  track in Home Assistant, walking legs included.
+- A **stop board** displays a single stop and lists its upcoming departures.
+- A **journey board** plans a door-to-door trip between two places you track
+in Home Assistant, including walking legs.
 
 Each board is one config entry, and appears in Home Assistant as one **device**
 grouping that board's sensors.
@@ -32,12 +32,10 @@ grouping that board's sensors.
   integration rewriting sensor states on every poll.
 - **Optional destination filter** — only show departures that actually continue
   to the stop you care about, instead of every service leaving the platform.
-- **Transport mode filter** — bus, trolleybus, tram, train and ferry, including
-  trolleybuses that the data source does not label as such (see below).
+- **Transport mode filter** — bus, trolleybus, tram, train and ferry.
 - **Optional line filter** — watch only the routes you travel with.
 - **Configurable update interval**, from 1 minute upwards (default 3).
-- Set up entirely from the UI, with stop search or a direct GTFS ID, in English
-  and Estonian.
+- Set up entirely from the UI, with stop search or a direct GTFS ID.
 
 ### Journey boards
 
@@ -197,7 +195,7 @@ automation:
         before: "09:00:00"
         weekday: [mon, tue, wed, thu, fri]
       - condition: state
-        entity_id: person.mihkel
+        entity_id: person.you
         state: home
     actions:
       - action: homeassistant.update_entity
@@ -227,6 +225,8 @@ the moment you look at it.
 
 ## Entities
 
+### Stop board entities
+
 Each configured stop becomes a device with 11 sensors:
 
 | Entity | Description |
@@ -241,16 +241,6 @@ name plus the entity name:
 | --- | --- | --- |
 | No destination | `Laagri Departure 1` | `sensor.peatus_laagri_departure_1` |
 | With destination | `Viru → Vana-Lõuna Departure 1` | `sensor.peatus_viru_vana_louna_departure_1` |
-
-The stop code is kept out of both. It appears instead on the device card,
-along with everything else needed to identify the stop:
-
-| Device field | Example |
-| --- | --- |
-| Name | `Laagri` |
-| Model | `Train stop Laagri`, or `Train route Laagri → Järve` when a destination is set |
-| Model ID | `Rong Balti jaama suunas` — the feed's own description of the stop |
-| Manufacturer | `peatus.ee` |
 
 **Visit device** links straight to that stop's page on peatus.ee.
 
@@ -268,13 +258,13 @@ sensor.peatus_viru_departure_1              # all departures from Viru
 sensor.peatus_viru_vana_louna_departure_1   # Viru, only towards Vana-Lõuna
 ```
 
-The stop code is deliberately left out to keep IDs readable. If you add two
-boards for stops that share a name, Home Assistant appends `_2` to the second
-one — rename it under the entity's settings if you want something clearer.
-Renames you make are preserved across restarts and upgrades.
-
-`Next departure` and `Departure 1` intentionally hold the same value —
-`Next departure` gives automations a stable entity ID to reference.
+`Next departure` and `Departure 1` always hold the same value: both track the
+soonest matching departure, with the same attributes. Their only difference is
+the icon — `Next departure` keeps the clock, while the numbered sensors take
+the icon of whatever vehicle is due. The alias is there for readability, so a
+template can say what it means instead of relying on the reader knowing the
+list is ordered by time. Either one works; nothing is lost by using
+`Departure 1` throughout.
 
 The state is a **timestamp**. Sensors report `unknown` when there are fewer
 matching departures than 10, which is normal at night.
@@ -486,9 +476,6 @@ entities:
         ({{ state_attr(config.entity, 'ride_minutes') }} min)
       {% endif %}
 ```
-
-A plain `entities` card works too — Home Assistant renders timestamp sensors as
-"in 6 minutes" automatically.
 
 ## Example automation
 
