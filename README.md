@@ -92,6 +92,60 @@ schedule change the same line exists twice, as `… (kuni 20.09)` and
 line withdrawn from the timetable altogether stays in the filter until you
 remove it.
 
+## Updating on demand instead of on a timer
+
+Every board polls on the interval you gave it. You can turn that off and
+refresh it yourself instead, which is worth doing for a **journey board**:
+planning a trip is a routing search rather than a timetable read, and a board
+nobody is looking at still costs a request every five minutes all night.
+
+Open the entry's ⋮ menu → **System options** and turn off *Enable polling for
+updates*. The entry keeps its entities and its settings; it simply stops
+refreshing on its own. The change takes effect immediately, in both directions,
+because the integration reloads the entry whenever it is updated — no restart.
+
+Then refresh it when it actually matters:
+
+```yaml
+automation:
+  - alias: Refresh the commute board on weekday mornings
+    triggers:
+      - trigger: time_pattern
+        minutes: "/5"
+    conditions:
+      - condition: time
+        after: "06:30:00"
+        before: "09:00:00"
+        weekday: [mon, tue, wed, thu, fri]
+      - condition: state
+        entity_id: person.mihkel
+        state: home
+    actions:
+      - action: homeassistant.update_entity
+        target:
+          entity_id: sensor.peatus_home_work_journey_1
+```
+
+Three things worth knowing:
+
+- **One entity refreshes the whole device.** Every sensor of a board belongs
+  to one config entry, with a single coordinator behind it, so the automation
+  names one `entity_id` rather than all seven. Listing them all would not fetch
+  more — it would ask the same coordinator seven times over.
+- **Bursts are debounced, not multiplied.** A refresh runs immediately if none
+  has run in the last ten seconds. Further requests inside that window are not
+  dropped — they collapse into a single extra run when it closes. So a trigger
+  that fires repeatedly costs at most two plans per ten seconds, rather than
+  one per trigger.
+- **The first refresh always happens**, whatever the toggle says — once at
+  setup and once after every Home Assistant restart. That is what lets a board
+  report a problem (an origin that cannot be located, say) instead of sitting
+  silently empty.
+
+For the journey board above that is roughly 750 plans a month rather than the
+8,600 a five-minute interval would make, without the board ever being stale at
+the moment you look at it.
+
 ## Entities
 
 Each configured stop becomes a device with 11 sensors:
