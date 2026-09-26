@@ -20,7 +20,7 @@ Two kinds of boards:
 
 - A **stop board** displays a single stop and lists its upcoming departures.
 - A **journey board** plans a door-to-door trip between two places you track
-in Home Assistant, including walking legs.
+  in Home Assistant, including walking legs.
 
 Each board is one config entry, and appears in Home Assistant as one **device**
 grouping that board's sensors.
