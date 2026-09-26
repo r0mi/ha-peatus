@@ -433,7 +433,9 @@ automation:
             {{ integration_entities('peatus') | join(', ') }}
 ```
 
-## Example dashboard card
+## Example dashboard cards
+
+### A stop board
 
 Show the next three departures, with when each one gets you there
 
@@ -484,6 +486,138 @@ entities:
         ({{ state_attr(config.entity, 'ride_minutes') }} min)
       {% endif %}
 ```
+
+### A journey board, drawn like peatus.ee
+
+<img alt="Five planned journeys drawn as proportional coloured bars, followed by the cycling and walking boards" src="https://raw.githubusercontent.com/r0mi/ha-peatus/main/docs/img/journey_rendering.png" width="420">
+
+The journey attributes are shaped for this: `legs` is the whole itinerary in
+order, every leg carries its own colour, and the legs add up to
+`duration_seconds` exactly, so a proportional bar needs no arithmetic beyond
+`flex: <leg duration>`.
+
+This needs [button-card](https://github.com/custom-cards/button-card) from
+HACS. Put the template at the **top level** of the dashboard, beside `views` —
+in storage mode that is ⋮ → *Raw configuration editor*.
+
+```yaml
+button_card_templates:
+  itinerary_row:
+    show_icon: false
+    show_name: false
+    show_state: false
+    tap_action:
+      action: more-info
+    styles:
+      card:
+        - padding: 12px 4px
+        - background: transparent
+        - box-shadow: none
+        - border-radius: "0"
+        - border-bottom: 1px solid var(--divider-color)
+      grid:
+        - grid-template-areas: '"head" "bar" "foot"'
+        - grid-template-columns: 1fr
+        - grid-template-rows: auto auto auto
+        - row-gap: 8px
+      custom_fields:
+        head:
+          - justify-self: stretch
+        bar:
+          - justify-self: stretch
+        foot:
+          - justify-self: stretch
+    custom_fields:
+      head: |
+        [[[
+          const a = entity.attributes;
+          if (!(a.legs || []).length) return '';
+          const fmt = (s) => new Date(s).toLocaleTimeString(
+            [], { hour: '2-digit', minute: '2-digit' });
+          const spell = (m) => m >= 60
+            ? `${Math.floor(m / 60)} h ${m % 60} min` : `${m} min`;
+          const css = 'display:flex;justify-content:space-between;' +
+                      'align-items:baseline;font-size:19px;font-weight:700;';
+          return `<div style="${css}">` +
+                 `<span>${fmt(a.start_time)} - ${fmt(a.arrival_time)}</span>` +
+                 `<span>${spell(a.duration_minutes)}</span></div>`;
+        ]]]
+      bar: |
+        [[[
+          const ICON = { walk: 'mdi:walk', bicycle: 'mdi:bike',
+                         wait: 'mdi:timer-sand', bus: 'mdi:bus',
+                         trolleybus: 'mdi:bus', tram: 'mdi:tram',
+                         rail: 'mdi:train', ferry: 'mdi:ferry' };
+          const brief = (m) => m >= 60
+            ? `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}`
+            : `${m}`;
+          const seg = (entity.attributes.legs || []).map(l => {
+            const ride = l.route != null;
+            const bg = ride ? (l.color || 'var(--primary-color)')
+                            : 'var(--divider-color)';
+            const fg = ride ? (l.text_color || '#ffffff')
+                            : 'var(--primary-text-color)';
+            const css = `flex:${l.duration} 1 0;min-width:44px;display:flex;` +
+                        `align-items:center;gap:6px;background:${bg};` +
+                        `color:${fg};border-radius:5px;padding:5px 10px;` +
+                        `font-weight:700;font-size:14px;overflow:hidden;` +
+                        `white-space:nowrap;`;
+            const icon = `<ha-icon icon="${ICON[l.mode]}" ` +
+                         `style="--mdc-icon-size:17px;flex:none;margin:0;">` +
+                         `</ha-icon>`;
+            const label = ride ? l.route : brief(l.minutes);
+            return `<div style="${css}">${icon}<span>${label}</span></div>`;
+          }).join('');
+          return `<div style="display:flex;gap:4px;">${seg}</div>`;
+        ]]]
+      foot: |
+        [[[
+          const a = entity.attributes;
+          const legs = a.legs || [];
+          const css = 'font-size:14px;color:var(--secondary-text-color);';
+          if (!legs.length) return `<div style="${css}">No connection</div>`;
+          if (!a.departure_time) {
+            const how = legs.some(l => l.mode === 'bicycle')
+              ? 'By bike' : 'On foot';
+            const m = legs.reduce((sum, l) => sum + (l.distance || 0), 0);
+            const km = m ? ` \u00b7 ${(m / 1000).toFixed(1)} km` : '';
+            return `<div style="${css}">${how}${km}</div>`;
+          }
+          const fmt = (s) => new Date(s).toLocaleTimeString(
+            [], { hour: '2-digit', minute: '2-digit' });
+          const bold = 'color:var(--primary-text-color);';
+          return `<div style="${css}">Leaves ` +
+                 `<b style="${bold}">${fmt(a.departure_time)}</b> from ` +
+                 `<b style="${bold}">${a.departure_stop}</b></div>`;
+        ]]]
+```
+
+Then one card per sensor:
+
+```yaml
+type: custom:button-card
+template: itinerary_row
+entity: sensor.peatus_home_work_journey_1
+grid_options:
+  columns: full
+```
+
+Repeat for `_journey_2` … `_journey_5`, and for `_walk` and `_ride`. The same
+template draws all seven: every journey sensor publishes `start_time` and
+`legs`, so the walking and cycling boards need no special case — the footer
+falls back to "On foot" / "By bike" when there is no `departure_time`, which is
+exactly the plan that boards nothing.
+
+Three details worth keeping if you rewrite it:
+
+- **`l.duration`, not `l.minutes`, for the flex share.** Minutes are rounded,
+  and rounding five legs independently makes the bar drift from the total.
+- **`l.text_color`, not white.** Route 191 publishes black text on a light
+  background; hardcoding white makes its number invisible.
+- **`l.route != null` is the test for a ride.** Walking, cycling and waiting
+  legs carry no route, which is what tells them apart from a service without
+  having to list the transport modes.
+
 
 ## Example automation
 
