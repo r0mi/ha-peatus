@@ -607,3 +607,28 @@ async def test_journey_settings_default_to_the_feeds_own_speeds(
     assert defaults[CONF_BIKE_SPEED] == DEFAULT_BIKE_SPEED
     assert defaults[CONF_BIKE_OPTIMIZE] == DEFAULT_BIKE_OPTIMIZE
     assert defaults[CONF_SCAN_INTERVAL] == DEFAULT_JOURNEY_SCAN_INTERVAL
+
+
+async def test_journey_ends_accept_any_entity_that_names_a_place(
+    hass: HomeAssistant,
+) -> None:
+    """A destination can be held by a sensor, not just a tracker or a zone.
+
+    An end is resolved by state rather than by domain, and a template sensor
+    holding a zone's entity ID is the usual way to build a destination that
+    changes with the time of day.
+    """
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {"next_step_id": "journey"}
+    )
+
+    offered = result["data_schema"].schema[CONF_DESTINATION_ENTITY].config
+    assert set(offered["domain"]) >= {
+        "person",
+        "device_tracker",
+        "zone",
+        "sensor",
+    }

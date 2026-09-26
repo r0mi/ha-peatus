@@ -132,6 +132,28 @@ Choose **Plan a journey between two places** on the first step, then:
    cannot be planned from. If you pick one that cannot be located, the board
    says so by name rather than quietly planning from the wrong place.
 
+   Sensors and the text and select helpers are offered too, because an end is
+   resolved by **state**, not by domain — anything whose state names a place
+   works. That includes an entity holding *another* entity's ID, which is how a
+   destination that changes with the time of day is usually built:
+
+   ```yaml
+   template:
+     - sensor:
+         - name: "Next destination"
+           state: >
+             {% if is_state('person.you', 'home') %}
+               zone.work
+             {% else %}
+               zone.home
+             {% endif %}
+   ```
+
+   Point the board's **To** at that sensor and it plans to work in the morning
+   and home in the evening. Note the entity IDs of the board's sensors are
+   built from the name the destination had when you created it, so give it a
+   short one — or rename the device afterwards, which offers to rename all
+   seven entities with it.
 2. **Journey settings.** Modes, lines and update interval as above, plus
    walking speed, cycling speed and a cycling route preference.
 

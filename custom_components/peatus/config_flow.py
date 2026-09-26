@@ -144,11 +144,27 @@ def _settings_schema(
 
 
 #: Both ends of a journey are places rather than stops, which is what gives the
-#: plan a walk at each end. A router-based tracker publishes no coordinates and
-#: cannot be excluded here, because that is a property of its state rather than
-#: of its domain; the coordinator says so plainly when it cannot locate one.
+#: plan a walk at each end.
+#:
+#: Sensors and the text and select helpers are offered alongside the obvious
+#: three because an end is resolved by state, not by domain: anything whose
+#: state names a place works, including an entity holding another entity's ID,
+#: which is how a destination that changes with the time of day is usually
+#: built. A router-based tracker, meanwhile, cannot be excluded here however
+#: much one would like to — publishing no coordinates is a property of its
+#: state rather than of its domain, so the coordinator is what says so, by
+#: name, when it cannot locate one.
 PLACE_SELECTOR = EntitySelector(
-    EntitySelectorConfig(domain=["person", "device_tracker", "zone"])
+    EntitySelectorConfig(
+        domain=[
+            "person",
+            "device_tracker",
+            "zone",
+            "sensor",
+            "input_text",
+            "input_select",
+        ]
+    )
 )
 
 JOURNEY_SCHEMA = vol.Schema(
