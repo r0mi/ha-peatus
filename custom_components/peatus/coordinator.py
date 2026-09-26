@@ -62,8 +62,10 @@ _FETCH_STEPS_DESTINATION = (60, 150, 300)
 _PLAN_STEPS_PLAIN = (NUM_ITINERARIES,)
 _PLAN_STEPS_FILTERED = (NUM_ITINERARIES, 15)
 
-#: A "lat,lon" pair exactly as ``find_coordinates`` formats one.
-_COORDINATES = re.compile(r"(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)")
+#: A "lat,lon" pair. ``find_coordinates`` formats one without a space, but an
+#: end may just as well be a helper somebody typed a pair into by hand, so the
+#: spacing around the comma is theirs to choose.
+_COORDINATES = re.compile(r"(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)")
 
 _MAX_LATITUDE = 90
 _MAX_LONGITUDE = 180
@@ -277,7 +279,8 @@ def _resolve(hass: HomeAssistant, entity_id: str) -> tuple[float, float]:
             )
         raise UpdateFailed(
             f"{entity_id} reports no location (its state is {state.state!r}); "
-            "only zones and trackers that publish coordinates can be planned from"
+            "an end has to publish coordinates, name a zone, or hold the "
+            'entity ID of one — or a "lat,lon" pair'
         )
 
     latitude, longitude = float(match[1]), float(match[2])

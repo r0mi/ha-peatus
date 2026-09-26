@@ -47,13 +47,14 @@ def build_coordinator(
     modes: list[str] | None = None,
     routes: list[str] | None = None,
     options: dict | None = None,
+    origin: str = ORIGIN,
 ) -> tuple[PeatusJourneyCoordinator, AsyncMock]:
     """Create a journey coordinator with a mocked API client."""
     entry = MockConfigEntry(
         domain=DOMAIN,
         data={
             CONF_BOARD: BOARD_JOURNEY,
-            CONF_ORIGIN_ENTITY: ORIGIN,
+            CONF_ORIGIN_ENTITY: origin,
             CONF_DESTINATION_ENTITY: DESTINATION,
         },
         options={
@@ -114,6 +115,31 @@ async def test_unavailable_entity_fails_loudly(hass: HomeAssistant) -> None:
         await coordinator._async_update_data()
 
     assert "unavailable" in str(err.value)
+
+
+@pytest.mark.parametrize(
+    ("written", "expected"),
+    [
+        ("59.3528,24.6382", (59.3528, 24.6382)),
+        # A pair typed into a helper by hand, which is how a person writes one.
+        # find_coordinates never emits the space itself, so only a human ever
+        # hands this shape over — and until it was accepted, doing so failed.
+        ("59.43443134336628, 24.610919208336178", (59.4344, 24.6109)),
+        ("59.3528 , 24.6382", (59.3528, 24.6382)),
+        ("-59.3528,-24.6382", (-59.3528, -24.6382)),
+    ],
+)
+async def test_a_typed_coordinate_pair_is_an_end(
+    hass: HomeAssistant, written: str, expected: tuple[float, float]
+) -> None:
+    """An entity holding a lat/lon pair can be planned from, however spaced."""
+    hass.states.async_set("input_text.somewhere", written)
+    place(hass, DESTINATION, 59.39, 24.72)
+    coordinator, api = build_coordinator(hass, origin="input_text.somewhere")
+
+    await coordinator._async_update_data()
+
+    assert api.async_plan.await_args.args[0] == expected
 
 
 async def test_impossible_coordinates_fail(hass: HomeAssistant) -> None:
