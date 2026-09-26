@@ -750,21 +750,86 @@ async def test_plan_walk_asks_only_to_walk(api, session) -> None:
     assert [leg.mode for leg in itinerary.legs] == ["walk"]
 
 
-async def test_plan_bicycle_keeps_the_walk_to_the_bike(api, session) -> None:
-    """A cycling plan starts with the few steps to the bicycle."""
+async def test_plan_bicycle_absorbs_the_steps_to_the_bike(api, session) -> None:
+    """The few seconds of walking onto the street are folded into the ride.
+
+    Planning from a point rather than a stop makes the feed emit a short hop
+    onto the street network first — nineteen seconds from a pavement to the
+    corner of a car park, in a measured case. It is not an instruction, and as
+    its own segment it takes far more of a bar than its share of the trip.
+    """
     session.graphql_response = _plan(
-        [_itinerary([_plan_leg("WALK", 1000, 1038), _plan_leg("BICYCLE", 1038, 2880)])]
+        [_itinerary([_plan_leg("WALK", 1000, 1019), _plan_leg("BICYCLE", 1019, 2880)])]
     )
 
     itinerary = await api.async_plan_bicycle((1.0, 2.0), (3.0, 4.0), PlanOptions())
 
-    assert [mode["mode"] for mode in session.posted["variables"]["modes"]] == [
-        "BICYCLE"
-    ]
-    assert [leg.mode for leg in itinerary.legs] == ["walk", "bicycle"]
+    assert [leg.mode for leg in itinerary.legs] == ["bicycle"]
+    # The time is stretched over, not discarded.
+    assert itinerary.legs[0].start_timestamp == 1000
+    assert sum(leg.duration for leg in itinerary.legs) == itinerary.duration
     # Cycling is not a ride on a service, so it never counts as a transfer.
     assert itinerary.transfers == 0
     assert itinerary.rides == []
+
+
+async def test_plan_keeps_a_real_walk_to_the_bike(api, session) -> None:
+    """A walk long enough to be worth doing stays a leg of its own."""
+    session.graphql_response = _plan(
+        [_itinerary([_plan_leg("WALK", 1000, 1300), _plan_leg("BICYCLE", 1300, 2880)])]
+    )
+
+    itinerary = await api.async_plan_bicycle((1.0, 2.0), (3.0, 4.0), PlanOptions())
+
+    assert [leg.mode for leg in itinerary.legs] == ["walk", "bicycle"]
+
+
+async def test_plan_absorbs_a_short_walk_at_the_end(api, session) -> None:
+    """The same applies to the last few steps off the street network."""
+    session.graphql_response = _plan(
+        [_itinerary([_plan_leg("BICYCLE", 1000, 2880), _plan_leg("WALK", 2880, 2900)])]
+    )
+
+    itinerary = await api.async_plan_bicycle((1.0, 2.0), (3.0, 4.0), PlanOptions())
+
+    assert [leg.mode for leg in itinerary.legs] == ["bicycle"]
+    assert itinerary.legs[0].end_timestamp == 2900
+
+
+async def test_plan_never_absorbs_an_access_walk_into_a_service(api, session) -> None:
+    """A short walk to the stop is kept, because the boarding is a claim.
+
+    Folding it into the ride would move the boarding stop to the origin and
+    pull the departure a few seconds earlier than the bus actually leaves —
+    both of which a board states as fact.
+    """
+    session.graphql_response = _plan(
+        [
+            _itinerary(
+                [
+                    _plan_leg("WALK", 1000, 1019),
+                    _plan_leg("BUS", 1019, 2200, route="18"),
+                ]
+            )
+        ]
+    )
+
+    itinerary = (
+        await api.async_plan((1.0, 2.0), (3.0, 4.0), 3, ["bus"], PlanOptions())
+    )[0]
+
+    assert [leg.mode for leg in itinerary.legs] == ["walk", "bus"]
+    assert itinerary.first_ride.start_timestamp == 1019
+    assert itinerary.first_ride.from_stop_code == "04401-1"
+
+
+async def test_plan_walk_only_is_left_alone(api, session) -> None:
+    """A walk with nothing beside it is the journey, however short."""
+    session.graphql_response = _plan([_itinerary([_plan_leg("WALK", 1000, 1030)])])
+
+    itinerary = await api.async_plan_walk((1.0, 2.0), (3.0, 4.0), PlanOptions())
+
+    assert [leg.mode for leg in itinerary.legs] == ["walk"]
 
 
 async def test_plan_walk_returns_none_when_unroutable(api, session) -> None:

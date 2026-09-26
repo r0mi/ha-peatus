@@ -116,6 +116,12 @@ MODE_BICYCLE: Final = "bicycle"
 #: the gaps are reconstructed as legs of their own; see ``api.py``.
 MODE_WAIT: Final = "wait"
 
+#: Shortest walk at either end of a journey worth showing as a leg of its own,
+#: in seconds. Planning from a point rather than a stop makes the API emit a
+#: few steps onto the street network first — nineteen seconds from a pavement
+#: to the corner of a car park, say. Nobody needs telling to do that, and drawn
+#: as its own segment it takes far more of a bar than its share of the trip.
+MIN_ACCESS_WALK: Final = 60
 
 #: The API's mode for each mode this integration offers. Its enum has no
 #: trolleybus, because the feed publishes trolleybus routes as buses, so both

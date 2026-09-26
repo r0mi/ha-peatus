@@ -16,6 +16,7 @@ from .const import (
     DEFAULT_BIKE_SPEED,
     DEFAULT_WALK_SPEED,
     GEOCODER_URL,
+    MIN_ACCESS_WALK,
     MODE_BICYCLE,
     MODE_BUS,
     MODE_TROLLEYBUS,
@@ -528,6 +529,53 @@ def _fill_gaps(legs: list[Leg], start: int, end: int) -> list[Leg]:
     return filled
 
 
+def _absorb(leg: Leg, walk: Leg, *, leading: bool) -> None:
+    """Stretch ``leg`` over an access ``walk`` beside it."""
+    if leading:
+        leg.start_timestamp = walk.start_timestamp
+        leg.from_name = walk.from_name
+        leg.from_stop_id = walk.from_stop_id
+        leg.from_stop_code = walk.from_stop_code
+    else:
+        leg.end_timestamp = walk.end_timestamp
+        leg.to_name = walk.to_name
+        leg.to_stop_id = walk.to_stop_id
+        leg.to_stop_code = walk.to_stop_code
+    leg.duration = leg.end_timestamp - leg.start_timestamp
+    if leg.distance is not None and walk.distance is not None:
+        leg.distance += walk.distance
+
+
+def _merge_access_walks(legs: list[Leg]) -> list[Leg]:
+    """Absorb a few seconds of walking at either end into the leg beside it.
+
+    Only ever into a walk or a ride of your own, never into a service. Merging
+    an access walk into a bus would move the boarding stop to "Origin" and pull
+    the departure time a few seconds earlier than the bus actually leaves —
+    both of which a board states as fact. Cycling has no such claim to spoil,
+    and it is where the stray segment actually shows up.
+
+    No time is discarded: the surviving leg is stretched over the walk, so the
+    legs still tile the itinerary exactly.
+    """
+    merged = list(legs)
+    if (
+        len(merged) > 1
+        and merged[0].mode == MODE_WALK
+        and merged[0].duration < MIN_ACCESS_WALK
+        and not merged[1].transit
+    ):
+        _absorb(merged[1], merged.pop(0), leading=True)
+    if (
+        len(merged) > 1
+        and merged[-1].mode == MODE_WALK
+        and merged[-1].duration < MIN_ACCESS_WALK
+        and not merged[-2].transit
+    ):
+        _absorb(merged[-2], merged.pop(), leading=False)
+    return merged
+
+
 def _parse_itinerary(raw: dict[str, Any]) -> Itinerary | None:
     """Convert one raw itinerary into an :class:`Itinerary`.
 
@@ -542,7 +590,7 @@ def _parse_itinerary(raw: dict[str, Any]) -> Itinerary | None:
     if not parsed:
         return None
     parsed.sort(key=lambda leg: leg.start_timestamp)
-    legs = _fill_gaps(parsed, start_timestamp, end_timestamp)
+    legs = _fill_gaps(_merge_access_walks(parsed), start_timestamp, end_timestamp)
 
     walk_distance = raw.get("walkDistance") or 0
     return Itinerary(
