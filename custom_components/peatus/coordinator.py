@@ -8,14 +8,20 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_SCAN_INTERVAL
-from homeassistant.core import HomeAssistant
+from homeassistant.const import (
+    CONF_SCAN_INTERVAL,
+    STATE_HOME,
+    STATE_NOT_HOME,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
+from homeassistant.core import HomeAssistant, valid_entity_id
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.location import find_coordinates
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .api import Departure, Itinerary, PeatusApi, PeatusApiError, PlanOptions
+from .api import Departure, Itinerary, PeatusApi, PeatusApiError, Place, PlanOptions
 from .const import (
     BOARD_JOURNEY,
     BOARD_STOP,
@@ -68,6 +74,14 @@ _PLAN_STEPS_FILTERED = (NUM_ITINERARIES, 15)
 #: end may just as well be a helper somebody typed a pair into by hand, so the
 #: spacing around the comma is theirs to choose.
 _COORDINATES = re.compile(r"(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)")
+
+#: States that say where a tracker is not, or that nothing is known, rather
+#: than naming anywhere. Never sent to the geocoder: "unknown" is a street
+#: name somewhere, and planning to it would be a silent wrong answer.
+_NOT_A_PLACE = frozenset({STATE_HOME, STATE_NOT_HOME, STATE_UNAVAILABLE, STATE_UNKNOWN})
+
+#: Most typed places remembered per board before the cache is started afresh.
+_MAX_CACHED_PLACES = 32
 
 _MAX_LATITUDE = 90
 _MAX_LONGITUDE = 180
@@ -258,8 +272,13 @@ def _scan_interval(entry: PeatusConfigEntry) -> int:
     )
 
 
-def _resolve(hass: HomeAssistant, entity_id: str) -> tuple[float, float]:
-    """Return where a tracked entity or zone is now, as rounded coordinates.
+def _locate(hass: HomeAssistant, entity_id: str) -> tuple[float, float] | str | None:
+    """Return where a tracked entity or zone is now, or the text it holds.
+
+    The answer is rounded coordinates when the end names a place Home
+    Assistant already knows, the text itself when it holds something that has
+    to be geocoded — an address, a shop, a street — and ``None`` when it holds
+    nothing at all, which is a search box nobody has typed into yet.
 
     ``find_coordinates`` never raises and never signals failure with a type.
     Given an entity that does not exist it hands back the string it was given;
@@ -267,7 +286,8 @@ def _resolve(hass: HomeAssistant, entity_id: str) -> tuple[float, float]:
     ("not_home", "unknown", "unavailable"); given a self-referential one it
     hands back ``None``. Its answer is therefore trusted only once it has
     parsed as a coordinate pair, and each way of not being one is reported
-    separately, because each needs different fixing.
+    separately, because each needs different fixing. Only what is left after
+    all of them is taken to be an address.
 
     The result is rounded because a phone's GPS drifts while it sits still, and
     an unrounded pair would re-plan the journey and rewrite every sensor on
@@ -282,15 +302,29 @@ def _resolve(hass: HomeAssistant, entity_id: str) -> tuple[float, float]:
             raise UpdateFailed(
                 f"{entity_id} does not exist; choose the journey's ends again"
             )
-        raise UpdateFailed(
-            f"{entity_id} reports no location (its state is {state.state!r}); "
-            "an end has to publish coordinates, name a zone, or hold the "
-            'entity ID of one — or a "lat,lon" pair'
-        )
+        text = found.strip()
+        if not text:
+            return None
+        if valid_entity_id(text):
+            # Typed as an entity ID, so meant as one: geocoding a misspelt
+            # "zone.wrok" would find some street and plan to it instead.
+            raise UpdateFailed(f"{entity_id} names {text}, which does not exist")
+        if text in _NOT_A_PLACE:
+            raise UpdateFailed(
+                f"{entity_id} reports no location (its state is {state.state!r}); "
+                "an end has to publish coordinates, name a zone, or hold the "
+                'entity ID of one — or a "lat,lon" pair or an address'
+            )
+        return text
 
     latitude, longitude = float(match[1]), float(match[2])
     if abs(latitude) > _MAX_LATITUDE or abs(longitude) > _MAX_LONGITUDE:
         raise UpdateFailed(f"{entity_id} reports an impossible location: {found}")
+    return _rounded(latitude, longitude)
+
+
+def _rounded(latitude: float, longitude: float) -> tuple[float, float]:
+    """Round a coordinate pair to the precision journeys are planned at."""
     return (
         round(latitude, COORDINATE_PRECISION),
         round(longitude, COORDINATE_PRECISION),
@@ -309,6 +343,10 @@ class JourneyData:
     itineraries: list[Itinerary]
     walk: Itinerary | None
     bicycle: Itinerary | None
+    #: What the geocoder matched each end to, when that end held an address
+    #: rather than naming a place Home Assistant knows; ``None`` otherwise.
+    origin_place: str | None = None
+    destination_place: str | None = None
 
 
 class PeatusJourneyCoordinator(DataUpdateCoordinator[JourneyData]):
@@ -330,6 +368,12 @@ class PeatusJourneyCoordinator(DataUpdateCoordinator[JourneyData]):
         self._walk: Itinerary | None = None
         self._bicycle: Itinerary | None = None
         self._warned_empty = False
+
+        #: Addresses already looked up, and what they were found to be. An
+        #: address does not move, so it is geocoded once rather than per poll;
+        #: a text that matched nothing is remembered too, so a typo is not
+        #: re-sent every few minutes until somebody corrects it.
+        self._places: dict[str, Place | None] = {}
 
         super().__init__(
             hass,
@@ -396,13 +440,48 @@ class PeatusJourneyCoordinator(DataUpdateCoordinator[JourneyData]):
             self._fixed_for = (origin, destination)
         return self._walk, self._bicycle
 
+    async def _async_resolve(
+        self, entity_id: str
+    ) -> tuple[tuple[float, float], str | None] | None:
+        """Return where one end of the journey is, and its address if geocoded.
+
+        ``None`` means the end is blank, which leaves the board empty.
+        """
+        found = _locate(self.hass, entity_id)
+        if found is None:
+            return None
+        if isinstance(found, tuple):
+            return found, None
+
+        if found not in self._places:
+            if len(self._places) >= _MAX_CACHED_PLACES:
+                self._places.clear()
+            focus = (self.hass.config.latitude, self.hass.config.longitude)
+            try:
+                self._places[found] = await self.api.async_geocode_place(found, focus)
+            except PeatusApiError as err:
+                raise UpdateFailed(f"Could not look up {found!r}: {err}") from err
+
+        if (place := self._places[found]) is None:
+            raise UpdateFailed(f"No place called {found!r} was found ({entity_id})")
+        return _rounded(place.lat, place.lon), place.label
+
     async def _async_update_data(self) -> JourneyData:
         """Plan the next journeys between the two configured places."""
-        # Resolved before the request and outside the API error handling: a
-        # tracker that cannot be located is not the feed's fault, and saying so
-        # is the difference between a fixable message and a silent wrong answer.
-        origin = _resolve(self.hass, self.origin_entity)
-        destination = _resolve(self.hass, self.destination_entity)
+        # Resolved before the request and outside the planner's error handling:
+        # a tracker that cannot be located is not the feed's fault, and saying
+        # so is the difference between a fixable message and a silent wrong
+        # answer.
+        origin_end = await self._async_resolve(self.origin_entity)
+        destination_end = await self._async_resolve(self.destination_entity)
+        if origin_end is None or destination_end is None:
+            # A search box that has not been filled in yet. Nothing is wrong,
+            # so the board is simply empty rather than unavailable.
+            return JourneyData(itineraries=[], walk=None, bicycle=None)
+        (origin, origin_place), (destination, destination_place) = (
+            origin_end,
+            destination_end,
+        )
 
         try:
             planned: list[Itinerary] = []
@@ -426,7 +505,11 @@ class PeatusJourneyCoordinator(DataUpdateCoordinator[JourneyData]):
 
         self._warn_if_empty(matched, planned)
         return JourneyData(
-            itineraries=matched[:NUM_ITINERARIES], walk=walk, bicycle=bicycle
+            itineraries=matched[:NUM_ITINERARIES],
+            walk=walk,
+            bicycle=bicycle,
+            origin_place=origin_place,
+            destination_place=destination_place,
         )
 
     def _warn_if_empty(

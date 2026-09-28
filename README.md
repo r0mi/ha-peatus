@@ -42,9 +42,12 @@ grouping that board's sensors.
 
 - **7 sensors per journey** — `Journey 1` … `Journey 5`, plus `Walking` and
   `Cycling`.
-- **Door to door.** Both ends are places — a zone, a person or a device tracker
-  — rather than stops, so a plan includes the walk to the first stop and from
-  the last one.
+- **Door to door.** Both ends are places — a zone, a person, a device tracker
+  or a typed address — rather than stops, so a plan includes the walk to the
+  first stop and from the last one.
+- **Searchable.** Point both ends at text helpers and the board becomes a
+  journey planner on your dashboard: type where from and where to, press
+  search. See [A journey planner on a dashboard](#a-journey-planner-on-a-dashboard).
 - **Full leg breakdown** in the attributes: every walk, ride and wait with its
   own duration, line, headsign and the route's own colours. The legs of a
   journey add up to its total exactly, so a dashboard can draw a proportional
@@ -149,7 +152,19 @@ Choose **Plan a journey between two places** on the first step, then:
    ```
 
    Point the board's **To** at that sensor and it plans to work in the morning
-   and home in the evening. Note the entity IDs of the board's sensors are
+   and home in the evening.
+
+   Whatever an end holds is tried in this order: an entity ID (`zone.work`,
+   `person.you`), a zone's name (`Work`), a `lat,lon` pair, and finally an
+   **address or place name** (`Viru väljak 4, Tallinn`, `Ülemiste keskus`),
+   which is looked up with the same geocoder peatus.ee's own search uses and
+   biased towards your home location. An address is looked up once, not on
+   every poll. What it was matched to is published as `origin_place` /
+   `destination_place`, because the geocoder takes the best match it has
+   rather than admitting it has none — `raekoda` alone finds Raeko in Undva
+   küla on Saaremaa, `Tallinna raekoda` finds the town hall. Text that matches
+   nothing at all makes the board unavailable and says so in the log. An end
+   that is **blank** leaves the board empty rather than failing. Note the entity IDs of the board's sensors are
    built from the name the destination had when you created it, so give it a
    short one — or rename the device afterwards, which offers to rename all
    seven entities with it.
@@ -345,6 +360,7 @@ instead, because they start whenever you do — a timestamp would only ever say
 | `routes`, `modes` | `["18", "34"]`, `["bus", "bus"]` | In the order ridden |
 | `origin`, `destination` | `Home`, `Work` | |
 | `origin_entity_id`, `destination_entity_id` | `person.romi`, `zone.work` | |
+| `origin_place`, `destination_place` | `null`, `Viru Väljak 4, Kesklinna linnaosa` | What a typed address was matched to; `null` when that end is an entity, a zone or coordinates |
 | `legs` | see below | Every segment of the journey |
 
 The `departure_*` attributes are about **boarding**, not about leaving the
@@ -619,6 +635,67 @@ Three details worth keeping if you rewrite it:
   legs carry no route, which is what tells them apart from a service without
   having to list the transport modes.
 
+### A journey planner on a dashboard
+
+A journey board whose ends are two **text helpers** is a planner: type where
+from and where to, press a button, and it plans between them.
+
+1. Create two helpers under **Settings → Devices & services → Helpers →
+   Text**, named `From` and `To`, with a maximum length of 255.
+2. Add a journey board whose From and To are `input_text.from` and
+   `input_text.to`. Its sensors are named after the helpers, so they become
+   `sensor.peatus_from_to_journey_1` and so on.
+3. In the board's ⋮ menu → **System options**, turn off *Enable polling for
+   updates*, so it plans only when asked (see
+   [Updating on demand](#updating-on-demand-instead-of-on-a-timer)).
+
+Each box takes anything a journey end does: `zone.home`, `person.you`, a zone's
+name, `59.4370,24.7536`, or an address. Then:
+
+```yaml
+type: vertical-stack
+cards:
+  - type: entities
+    entities:
+      - entity: input_text.from
+        name: From
+      - entity: input_text.to
+        name: To
+  - type: button
+    name: Search
+    icon: mdi:magnify
+    tap_action:
+      action: perform-action
+      perform_action: homeassistant.update_entity
+      target:
+        entity_id: sensor.peatus_from_to_journey_1
+  - type: markdown
+    content: >-
+      {% set a = states.sensor.peatus_from_to_journey_1.attributes %}
+      {{ a.origin_place or states('input_text.from') }} →
+      {{ a.destination_place or states('input_text.to') }}
+```
+
+and below it the `itinerary_row` cards from the previous section, pointed at
+`sensor.peatus_from_to_journey_1` … `_5`, `_walk` and `_ride`. The markdown card
+shows what each address was actually matched to, which is worth keeping: a
+loose match plans confidently to the wrong place.
+
+The button can be replaced by an automation that searches whenever either box
+changes:
+
+```yaml
+automation:
+  - alias: Plan the journey typed on the dashboard
+    triggers:
+      - trigger: state
+        entity_id: [input_text.from, input_text.to]
+    actions:
+      - action: homeassistant.update_entity
+        target:
+          entity_id: sensor.peatus_from_to_journey_1
+```
+
 
 ## Example automation
 
@@ -679,6 +756,14 @@ argument; line filtering is still done here, because `plan` has no route
 argument at all. It does have `banned` and `preferred`, but both take route
 *IDs* — the very thing that changes every timetable period — and `preferred` is
 only a soft penalty rather than a filter.
+
+An end that holds an address rather than a place Home Assistant knows is
+looked up with the geocoder's `/search`, across every layer — addresses,
+venues, streets and stops — and focused on your home location. The answer is
+cached per text, so re-planning a typed journey costs no further lookups.
+Anything shaped like an entity ID, and states such as `unknown` or `not_home`,
+are never sent to the geocoder: it would find *something* for them, and plan
+there.
 
 Walking and cycling plans depend only on the two endpoints, not on any
 timetable, so they are planned once and re-planned only when the rounded

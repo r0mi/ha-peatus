@@ -870,3 +870,77 @@ async def test_plan_wraps_api_errors(api, session) -> None:
 
     with pytest.raises(PeatusApiError):
         await api.async_plan((1.0, 2.0), (3.0, 4.0), 3, ["bus"], PlanOptions())
+
+
+def _place_feature(label: str | None, lon: float, lat: float, name: str = "x"):
+    """Build a geocoder feature for an address or venue."""
+    return {
+        "geometry": {"type": "Point", "coordinates": [lon, lat]},
+        "properties": {"label": label, "name": name, "layer": "address"},
+    }
+
+
+async def test_geocode_place_returns_the_best_match(api, session) -> None:
+    """An address comes back as its label and a latitude-first position."""
+    session.search_response = {
+        "features": [
+            _place_feature("Viru Väljak 4,  Kesklinna linnaosa ", 24.754321, 59.435881)
+        ]
+    }
+
+    place = await api.async_geocode_place("Viru väljak 4", (59.43, 24.75))
+
+    assert place.label == "Viru Väljak 4, Kesklinna linnaosa"
+    # GeoJSON is longitude first; everything in the integration is latitude first.
+    assert (place.lat, place.lon) == (59.435881, 24.754321)
+    assert session.get_urls == ["https://api.peatus.ee/geocoding/v1/search"]
+    # Every layer is searched, and ties are broken towards the given focus.
+    assert "layers" not in session.get_params
+    assert session.get_params["focus.point.lat"] == 59.43
+    assert session.get_params["focus.point.lon"] == 24.75
+
+
+async def test_geocode_place_without_focus(api, session) -> None:
+    """No focus point is sent when none is known."""
+    session.search_response = {"features": [_place_feature("A", 24.7, 59.4)]}
+
+    await api.async_geocode_place("A")
+
+    assert "focus.point.lat" not in session.get_params
+
+
+async def test_geocode_place_falls_back_to_the_name(api, session) -> None:
+    """A feature without a label is named by its own name."""
+    session.search_response = {
+        "features": [_place_feature(None, 24.7, 59.4, name="Kaubamaja")]
+    }
+
+    place = await api.async_geocode_place("kaubamaja")
+
+    assert place.label == "Kaubamaja"
+
+
+async def test_geocode_place_skips_features_without_a_point(api, session) -> None:
+    """A feature with no usable geometry is passed over, not crashed on."""
+    session.search_response = {
+        "features": [{"properties": {"label": "Broken"}}, _place_feature("B", 1, 2)]
+    }
+
+    place = await api.async_geocode_place("b")
+
+    assert place.label == "B"
+
+
+async def test_geocode_place_without_a_match(api, session) -> None:
+    """Text that matches nothing is reported as no place, not an error."""
+    session.search_response = {"features": []}
+
+    assert await api.async_geocode_place("qwxzqq") is None
+
+
+async def test_geocode_place_errors_are_api_errors(api, session) -> None:
+    """A failing geocoder is reported like any other feed failure."""
+    session.search_response = ClientError("down")
+
+    with pytest.raises(PeatusApiError):
+        await api.async_geocode_place("anything")

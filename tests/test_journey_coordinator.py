@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.peatus.api import PeatusApiError
+from custom_components.peatus.api import PeatusApiError, Place
 from custom_components.peatus.const import (
     BOARD_JOURNEY,
     CONF_BIKE_OPTIMIZE,
@@ -73,6 +73,7 @@ def build_coordinator(
     api.async_plan = AsyncMock(return_value=[make_itinerary()])
     api.async_plan_walk = AsyncMock(return_value=make_itinerary())
     api.async_plan_bicycle = AsyncMock(return_value=make_itinerary())
+    api.async_geocode_place = AsyncMock(return_value=None)
     return coordinator, api
 
 
@@ -142,6 +143,141 @@ async def test_a_typed_coordinate_pair_is_an_end(
     await coordinator._async_update_data()
 
     assert api.async_plan.await_args.args[0] == expected
+
+
+async def test_a_typed_address_is_geocoded(hass: HomeAssistant) -> None:
+    """Text that names no entity or zone is looked up as an address."""
+    hass.states.async_set("input_text.from", "Viru väljak 4, Tallinn")
+    place(hass, DESTINATION, 59.39, 24.72)
+    coordinator, api = build_coordinator(hass, origin="input_text.from")
+    api.async_geocode_place = AsyncMock(
+        return_value=Place(label="Viru Väljak 4", lat=59.43588123, lon=24.75432199)
+    )
+
+    data = await coordinator._async_update_data()
+
+    # Looked up near home, and rounded like any other end.
+    api.async_geocode_place.assert_awaited_once_with(
+        "Viru väljak 4, Tallinn", (hass.config.latitude, hass.config.longitude)
+    )
+    assert api.async_plan.await_args.args[0] == (59.4359, 24.7543)
+    # The match is published, so a loose one can be seen rather than trusted.
+    assert data.origin_place == "Viru Väljak 4"
+    assert data.destination_place is None
+
+
+async def test_an_address_is_geocoded_once(hass: HomeAssistant) -> None:
+    """An address does not move, so polling does not look it up again."""
+    hass.states.async_set("input_text.from", "Kaubamaja")
+    place(hass, DESTINATION, 59.39, 24.72)
+    coordinator, api = build_coordinator(hass, origin="input_text.from")
+    api.async_geocode_place = AsyncMock(
+        return_value=Place(label="Kaubamaja", lat=59.43, lon=24.75)
+    )
+
+    await coordinator._async_update_data()
+    await coordinator._async_update_data()
+    assert api.async_geocode_place.await_count == 1
+
+    # A new search is a new lookup.
+    hass.states.async_set("input_text.from", "Balti jaam")
+    await coordinator._async_update_data()
+    assert api.async_geocode_place.await_count == 2
+
+
+async def test_an_address_matching_nothing_fails_loudly(hass: HomeAssistant) -> None:
+    """A typo is reported by name rather than planned from somewhere else."""
+    hass.states.async_set("input_text.from", "qwxzqq")
+    place(hass, DESTINATION, 59.39, 24.72)
+    coordinator, api = build_coordinator(hass, origin="input_text.from")
+
+    with pytest.raises(UpdateFailed) as err:
+        await coordinator._async_update_data()
+
+    assert "qwxzqq" in str(err.value)
+    api.async_plan.assert_not_awaited()
+
+
+async def test_a_failing_geocoder_fails_the_update(hass: HomeAssistant) -> None:
+    """A geocoder outage fails the update and is not remembered as no match."""
+    hass.states.async_set("input_text.from", "Kaubamaja")
+    place(hass, DESTINATION, 59.39, 24.72)
+    coordinator, api = build_coordinator(hass, origin="input_text.from")
+    api.async_geocode_place = AsyncMock(side_effect=PeatusApiError("down"))
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
+
+    api.async_geocode_place = AsyncMock(
+        return_value=Place(label="Kaubamaja", lat=59.43, lon=24.75)
+    )
+    await coordinator._async_update_data()
+    api.async_plan.assert_awaited()
+
+
+@pytest.mark.parametrize("state", ["unknown", "not_home"])
+async def test_a_placeless_state_is_never_geocoded(
+    hass: HomeAssistant, state: str
+) -> None:
+    """A tracker's "not_home" is not an address, whatever the geocoder thinks."""
+    hass.states.async_set("input_text.from", state)
+    place(hass, DESTINATION, 59.39, 24.72)
+    coordinator, api = build_coordinator(hass, origin="input_text.from")
+
+    with pytest.raises(UpdateFailed) as err:
+        await coordinator._async_update_data()
+
+    assert "reports no location" in str(err.value)
+    api.async_geocode_place.assert_not_awaited()
+
+
+async def test_a_misspelt_entity_id_is_not_geocoded(hass: HomeAssistant) -> None:
+    """Text shaped like an entity ID was meant as one, so it is not looked up."""
+    hass.states.async_set("input_text.from", "zone.wrok")
+    place(hass, DESTINATION, 59.39, 24.72)
+    coordinator, api = build_coordinator(hass, origin="input_text.from")
+
+    with pytest.raises(UpdateFailed) as err:
+        await coordinator._async_update_data()
+
+    assert "zone.wrok" in str(err.value)
+    assert "does not exist" in str(err.value)
+    api.async_geocode_place.assert_not_awaited()
+
+
+@pytest.mark.parametrize("state", ["", "   "])
+async def test_a_blank_end_leaves_the_board_empty(
+    hass: HomeAssistant, state: str
+) -> None:
+    """A search box nobody has filled in is an empty board, not a failure."""
+    hass.states.async_set("input_text.from", state)
+    place(hass, DESTINATION, 59.39, 24.72)
+    coordinator, api = build_coordinator(hass, origin="input_text.from")
+
+    data = await coordinator._async_update_data()
+
+    assert data.itineraries == []
+    assert data.walk is None
+    assert data.bicycle is None
+    api.async_plan.assert_not_awaited()
+    api.async_geocode_place.assert_not_awaited()
+
+
+async def test_a_zone_can_be_typed_by_name(hass: HomeAssistant) -> None:
+    """A zone's friendly name is found by Home Assistant, not the geocoder."""
+    hass.states.async_set(
+        "zone.office",
+        "0",
+        {"friendly_name": "Office", "latitude": 59.4, "longitude": 24.7},
+    )
+    hass.states.async_set("input_text.from", "Office")
+    place(hass, DESTINATION, 59.39, 24.72)
+    coordinator, api = build_coordinator(hass, origin="input_text.from")
+
+    await coordinator._async_update_data()
+
+    assert api.async_plan.await_args.args[0] == (59.4, 24.7)
+    api.async_geocode_place.assert_not_awaited()
 
 
 async def test_impossible_coordinates_fail(hass: HomeAssistant) -> None:

@@ -10,6 +10,7 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components import peatus
+from custom_components.peatus.api import Place
 from custom_components.peatus.const import (
     BOARD_JOURNEY,
     CONF_BOARD,
@@ -222,7 +223,38 @@ async def test_empty_slots_still_name_the_places(hass: HomeAssistant, api) -> No
     assert state.attributes["origin"] == "Home"
     assert state.attributes["destination"] == "Work"
     assert state.attributes["origin_entity_id"] == ORIGIN
+    assert state.attributes["origin_place"] is None
+    assert state.attributes["destination_place"] is None
     assert state.attributes["legs"] == []
+
+
+async def test_a_blank_search_box_sets_up_an_empty_board(
+    hass: HomeAssistant, api
+) -> None:
+    """A board whose end has not been typed yet still sets up, just empty."""
+    entry = build_entry(**{CONF_ORIGIN_ENTITY: "input_text.from"})
+    hass.states.async_set("input_text.from", "")
+    await setup_entry(hass, entry)
+
+    state = hass.states.get("sensor.peatus_home_work_journey_1")
+    assert state.state == STATE_UNKNOWN
+    assert state.attributes["legs"] == []
+    api.async_plan.assert_not_awaited()
+
+
+async def test_the_matched_address_is_published(hass: HomeAssistant, api) -> None:
+    """Every sensor names what a typed address was matched to."""
+    api.async_geocode_place = AsyncMock(
+        return_value=Place(label="Tallinna Raekoda", lat=59.437, lon=24.745)
+    )
+    entry = build_entry(**{CONF_DESTINATION_ENTITY: "input_text.to"})
+    hass.states.async_set("input_text.to", "raekoda")
+    await setup_entry(hass, entry)
+
+    for suffix in ("journey_1", f"journey_{NUM_ITINERARIES}", "walk"):
+        attributes = hass.states.get(f"sensor.peatus_home_work_{suffix}").attributes
+        assert attributes["destination_place"] == "Tallinna Raekoda"
+        assert attributes["origin_place"] is None
 
 
 async def test_friendly_names(hass: HomeAssistant, api) -> None:

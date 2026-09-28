@@ -412,11 +412,16 @@ class PeatusJourneySensor(CoordinatorEntity[PeatusJourneyCoordinator], SensorEnt
         first testing whether the board found anything.
         """
         entry = self.coordinator.config_entry
+        data = self.coordinator.data
         return {
             "origin": entry.data.get(CONF_ORIGIN_NAME),
             "origin_entity_id": entry.data.get(CONF_ORIGIN_ENTITY),
+            # What a typed address was matched to, so a loose match can be seen
+            # rather than silently planned to.
+            "origin_place": data.origin_place if data else None,
             "destination": entry.data.get(CONF_DESTINATION_NAME),
             "destination_entity_id": entry.data.get(CONF_DESTINATION_ENTITY),
+            "destination_place": data.destination_place if data else None,
             "legs": [],
         }
 

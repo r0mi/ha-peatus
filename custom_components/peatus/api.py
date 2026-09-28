@@ -83,6 +83,18 @@ class Stop:
 
 
 @dataclass(slots=True)
+class Place:
+    """Where a typed address or place name was found by the geocoder."""
+
+    #: The geocoder's own name for what it matched, e.g. "Viru Väljak 4,
+    #: Kesklinna linnaosa". Shown back to the user, because a loose match
+    #: ("Tartu raekoda" finding the railway station) is otherwise invisible.
+    label: str
+    lat: float
+    lon: float
+
+
+@dataclass(slots=True)
 class Departure:
     """A single upcoming departure from a stop."""
 
@@ -798,6 +810,35 @@ class PeatusApi:
             return []
         data = await self._query(SEARCH_STOPS_QUERY, {"name": terms})
         return [self._parse_stop(raw) for raw in (data.get("stops") or [])]
+
+    async def async_geocode_place(
+        self, text: str, focus: tuple[float, float] | None = None
+    ) -> Place | None:
+        """Return the best match for an address or place name, if there is one.
+
+        Every layer is searched rather than just addresses, because what people
+        type is as often a shop, a street or a stop as it is a house number.
+        ``focus`` breaks ties in favour of the matches nearest it: there is a
+        Kaubamaja in more than one town, and the one meant is usually the one
+        closest to home.
+        """
+        params: dict[str, Any] = {"text": text, "size": 1}
+        if focus is not None:
+            params["focus.point.lat"], params["focus.point.lon"] = focus
+        data = await self._get(f"{GEOCODER_URL}/search", params)
+        for feature in data.get("features") or []:
+            # GeoJSON orders a point longitude first.
+            match (feature.get("geometry") or {}).get("coordinates"):
+                case [lon, lat, *_]:
+                    pass
+                case _:
+                    continue
+            properties = feature.get("properties") or {}
+            label = properties.get("label") or properties.get("name") or text
+            # Venue names carry stray spaces ("Ülemiste keskus,  Lasnamäe").
+            label = " ".join(str(label).split())
+            return Place(label=label, lat=float(lat), lon=float(lon))
+        return None
 
     async def async_get_stop(self, gtfs_id: str) -> Stop:
         """Fetch a single stop by its GTFS ID."""
