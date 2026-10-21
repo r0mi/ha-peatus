@@ -72,10 +72,9 @@ Download it, then restart Home Assistant and add the integration:
 <details>
 <summary>Or add it by hand</summary>
 
-1. In HACS, choose **⋮ → Custom repositories**.
-2. Add `https://github.com/r0mi/ha-peatus` with category **Integration**.
-3. Download **Peatus.ee Public Transport** and restart Home Assistant.
-4. Go to **Settings → Devices & Services → Add Integration** and search for
+1. In HACS, search for **Peatus.ee Public Transport**.
+2. Download it and restart Home Assistant.
+3. Go to **Settings → Devices & Services → Add Integration** and search for
    *Peatus.ee*.
 
 </details>
@@ -828,7 +827,7 @@ Timetable data comes from the Estonian national public transport registry via
 endorsed by peatus.ee or the Transport Administration.
 
 [hacs]: https://github.com/hacs/integration
-[hacs-badge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg
+[hacs-badge]: https://img.shields.io/badge/HACS-Default-41BDF5.svg
 [license]: https://github.com/r0mi/ha-peatus/blob/main/LICENSE
 [license-badge]: https://img.shields.io/github/license/r0mi/ha-peatus?color=29c64d
 [my-config-flow]: https://my.home-assistant.io/redirect/config_flow_start/?domain=peatus
