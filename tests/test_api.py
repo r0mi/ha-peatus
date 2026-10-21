@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from aiohttp import ClientError
 
@@ -533,6 +535,38 @@ async def test_plan_parses_a_single_ride(api, session) -> None:
     assert ride.from_stop_code == "04401-1"
     assert itinerary.transfers == 0
     assert itinerary.routes == ["18"]
+
+
+async def test_plan_from_now_sends_no_time(api, session) -> None:
+    """Without a chosen time the feed plans from now, so none is sent at all."""
+    session.graphql_response = _plan([])
+
+    await api.async_plan((59.35, 24.63), (59.39, 24.72), 3, ["bus"], PlanOptions())
+
+    variables = session.posted["variables"]
+    assert "date" not in variables
+    assert "time" not in variables
+    assert "arriveBy" not in variables
+
+
+async def test_plan_sends_the_time_on_tallinn_clocks(api, session) -> None:
+    """A chosen time reaches the feed as Estonian wall-clock time."""
+    session.graphql_response = _plan([])
+    # 23:30 UTC is already the next day in Tallinn, in summer time (UTC+3).
+    when = datetime(2026, 7, 1, 23, 30, tzinfo=UTC)
+
+    await api.async_plan(
+        (59.35, 24.63),
+        (59.39, 24.72),
+        3,
+        ["bus"],
+        PlanOptions(when=when, arrive_by=True),
+    )
+
+    variables = session.posted["variables"]
+    assert variables["date"] == "2026-07-02"
+    assert variables["time"] == "02:30:00"
+    assert variables["arriveBy"] is True
 
 
 async def test_plan_legs_tile_the_itinerary(api, session) -> None:

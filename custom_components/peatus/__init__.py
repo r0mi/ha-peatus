@@ -13,7 +13,7 @@ from .coordinator import (
     board_type,
 )
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.DATETIME, Platform.SELECT, Platform.SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: PeatusConfigEntry) -> bool:

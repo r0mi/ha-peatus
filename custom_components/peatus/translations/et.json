@@ -114,6 +114,21 @@
     }
   },
   "entity": {
+    "select": {
+      "time_mode": {
+        "name": "Planeeri",
+        "state": {
+          "now": "Kohe",
+          "depart": "Väljumine",
+          "arrive": "Saabumine"
+        }
+      }
+    },
+    "datetime": {
+      "time": {
+        "name": "Aeg"
+      }
+    },
     "sensor": {
       "next_departure": {
         "name": "Järgmine väljumine"

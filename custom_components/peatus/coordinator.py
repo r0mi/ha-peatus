@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
-from datetime import timedelta
+from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
@@ -50,6 +50,8 @@ from .const import (
     NUM_ITINERARIES,
     PATTERN_CACHE_TTL,
     SUPPORTED_MODES,
+    TIME_ARRIVE,
+    TIME_NOW,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -331,6 +333,36 @@ def _rounded(latitude: float, longitude: float) -> tuple[float, float]:
     )
 
 
+def _moved(
+    itinerary: Itinerary | None, when: datetime, *, arrive_by: bool
+) -> Itinerary | None:
+    """Return a walk or ride shifted to start at, or arrive by, ``when``.
+
+    Neither waits for a timetable, so one planned for now holds at any time and
+    only its clock needs moving; re-planning it would cost a request for the
+    same answer.
+    """
+    if itinerary is None:
+        return None
+    target = int(when.timestamp())
+    shift = target - (
+        itinerary.end_timestamp if arrive_by else itinerary.start_timestamp
+    )
+    return replace(
+        itinerary,
+        start_timestamp=itinerary.start_timestamp + shift,
+        end_timestamp=itinerary.end_timestamp + shift,
+        legs=[
+            replace(
+                leg,
+                start_timestamp=leg.start_timestamp + shift,
+                end_timestamp=leg.end_timestamp + shift,
+            )
+            for leg in itinerary.legs
+        ],
+    )
+
+
 @dataclass(slots=True)
 class JourneyData:
     """Everything one journey board shows.
@@ -347,6 +379,10 @@ class JourneyData:
     #: rather than naming a place Home Assistant knows; ``None`` otherwise.
     origin_place: str | None = None
     destination_place: str | None = None
+    #: What the board actually planned for, which is "now" whenever the chosen
+    #: time is missing or already past, whatever the select says.
+    time_mode: str = TIME_NOW
+    requested_time: datetime | None = None
 
 
 class PeatusJourneyCoordinator(DataUpdateCoordinator[JourneyData]):
@@ -374,6 +410,11 @@ class PeatusJourneyCoordinator(DataUpdateCoordinator[JourneyData]):
         #: a text that matched nothing is remembered too, so a typo is not
         #: re-sent every few minutes until somebody corrects it.
         self._places: dict[str, Place | None] = {}
+
+        #: When to plan for, set by the board's select and datetime entities.
+        #: Not part of the entry: changing it must not reload the board.
+        self.time_mode: str = TIME_NOW
+        self.chosen_time: datetime | None = None
 
         super().__init__(
             hass,
@@ -466,6 +507,28 @@ class PeatusJourneyCoordinator(DataUpdateCoordinator[JourneyData]):
             raise UpdateFailed(f"No place called {found!r} was found ({entity_id})")
         return _rounded(place.lat, place.lon), place.label
 
+    def _moment(self) -> tuple[str, datetime | None]:
+        """Return the mode and time to plan for, falling back to now.
+
+        A time already past is planned from now rather than for: a board left
+        at "arrive by 09:00" would otherwise keep offering journeys that left
+        hours ago.
+        """
+        when = self.chosen_time
+        if self.time_mode == TIME_NOW or when is None or when <= dt_util.utcnow():
+            return TIME_NOW, None
+        return self.time_mode, when
+
+    async def async_replan_if_moved(self) -> None:
+        """Re-plan when the chosen time changes what the board plans for.
+
+        Picking a mode before any time is set, or moving a time while the board
+        plans from now, changes nothing, so it costs no request.
+        """
+        data = self.data
+        if data is None or (data.time_mode, data.requested_time) != self._moment():
+            await self.async_request_refresh()
+
     async def _async_update_data(self) -> JourneyData:
         """Plan the next journeys between the two configured places."""
         # Resolved before the request and outside the planner's error handling:
@@ -483,6 +546,8 @@ class PeatusJourneyCoordinator(DataUpdateCoordinator[JourneyData]):
             destination_end,
         )
 
+        time_mode, when = self._moment()
+        arrive_by = time_mode == TIME_ARRIVE
         try:
             planned: list[Itinerary] = []
             matched: list[Itinerary] = []
@@ -492,7 +557,11 @@ class PeatusJourneyCoordinator(DataUpdateCoordinator[JourneyData]):
                     destination,
                     count,
                     self.modes,
-                    _plan_options(self.config_entry),
+                    replace(
+                        _plan_options(self.config_entry),
+                        when=when,
+                        arrive_by=arrive_by,
+                    ),
                 )
                 matched = self._filter(planned)
                 # Stop early once there is enough, or once the planner itself
@@ -504,12 +573,24 @@ class PeatusJourneyCoordinator(DataUpdateCoordinator[JourneyData]):
             raise UpdateFailed(str(err)) from err
 
         self._warn_if_empty(matched, planned)
+        if arrive_by:
+            # Arriving by a time, the best plans are the latest to arrive, and
+            # a larger request only adds earlier ones; keep those nearest it.
+            matched = sorted(matched, key=lambda plan: plan.end_timestamp)
+            matched = sorted(
+                matched[-NUM_ITINERARIES:], key=lambda plan: plan.start_timestamp
+            )
+        if when is not None:
+            walk = _moved(walk, when, arrive_by=arrive_by)
+            bicycle = _moved(bicycle, when, arrive_by=arrive_by)
         return JourneyData(
             itineraries=matched[:NUM_ITINERARIES],
             walk=walk,
             bicycle=bicycle,
             origin_place=origin_place,
             destination_place=destination_place,
+            time_mode=time_mode,
+            requested_time=when,
         )
 
     def _warn_if_empty(

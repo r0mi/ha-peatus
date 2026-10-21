@@ -6,7 +6,9 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from aiohttp import ClientError, ClientSession
 
@@ -16,6 +18,7 @@ from .const import (
     DEFAULT_BIKE_SPEED,
     DEFAULT_MAX_WALK_DISTANCE,
     DEFAULT_WALK_SPEED,
+    FEED_TIMEZONE,
     GEOCODER_URL,
     MIN_ACCESS_WALK,
     MODE_BICYCLE,
@@ -223,6 +226,10 @@ class PlanOptions:
     #: Metres, and a hard limit rather than a preference: the planner discards
     #: every journey needing a longer walk to or from a stop.
     max_walk_distance_m: int = DEFAULT_MAX_WALK_DISTANCE
+    #: When to leave, or with ``arrive_by`` when to be there by. ``None`` plans
+    #: from now, and the walking and cycling plans are only ever made that way.
+    when: datetime | None = None
+    arrive_by: bool = False
 
 
 _STOP_FIELDS = "gtfsId name code desc zoneId vehicleMode lat lon routes{shortName}"
@@ -310,8 +317,8 @@ _LEG_FIELDS = """
       trip { gtfsId tripHeadsign }
 """
 
-#: No date or time is sent, so the feed plans from now, which is what a live
-#: board wants. ``arriveBy`` with a time is the obvious later extension.
+#: Without a date and time the feed plans from now, which is what a live board
+#: wants; they are left out of the variables entirely rather than sent as null.
 PLAN_QUERY = f"""
 query Plan(
   $fromLat: Float!
@@ -324,11 +331,17 @@ query Plan(
   $bikeSpeed: Float
   $optimize: OptimizeType
   $maxWalkDistance: Float
+  $date: String
+  $time: String
+  $arriveBy: Boolean
 ) {{
   plan(
     from: {{lat: $fromLat, lon: $fromLon}}
     to: {{lat: $toLat, lon: $toLon}}
     numItineraries: $count
+    date: $date
+    time: $time
+    arriveBy: $arriveBy
     transportModes: $modes
     walkSpeed: $walkSpeed
     bikeSpeed: $bikeSpeed
@@ -951,6 +964,14 @@ class PeatusApi:
         options: PlanOptions,
     ) -> list[Itinerary]:
         """Plan journeys between two points for an explicit list of modes."""
+        moment: dict[str, Any] = {}
+        if options.when is not None:
+            local = options.when.astimezone(ZoneInfo(FEED_TIMEZONE))
+            moment = {
+                "date": local.strftime("%Y-%m-%d"),
+                "time": local.strftime("%H:%M:%S"),
+                "arriveBy": options.arrive_by,
+            }
         data = await self._query(
             PLAN_QUERY,
             {
@@ -966,6 +987,7 @@ class PeatusApi:
                 "bikeSpeed": options.bike_speed_kmh / _KMH_TO_MS,
                 "optimize": options.bike_optimize.upper(),
                 "maxWalkDistance": options.max_walk_distance_m,
+                **moment,
             },
         )
         plan = data.get("plan") or {}

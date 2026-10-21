@@ -54,6 +54,8 @@ grouping that board's sensors.
   bar straight from them.
 - **Follows you.** The origin is resolved on every poll, so a board planned
   from `person.you` re-plans as you move.
+- **Plan ahead.** Each board can plan from now, to leave at a chosen time, or
+  to arrive by one, set from its own two controls.
 - **Always offers walking and cycling**, so you can see when the bus is not
   worth waiting for.
 - **Tunable** walking and cycling speed, and a cycling route preference —
@@ -326,13 +328,22 @@ delay picked up during the ride itself is not reflected.
 
 ### Journey board entities
 
-Each configured journey becomes a device with 7 sensors:
+Each configured journey becomes a device with 7 sensors and 2 controls:
 
 | Entity | State | Description |
 | --- | --- | --- |
 | `sensor.peatus_<from>_<to>_journey_1` … `_5` | timestamp | When you have to leave to catch that journey |
 | `sensor.peatus_<from>_<to>_walk` | minutes | How long it takes to walk the whole way |
 | `sensor.peatus_<from>_<to>_ride` | minutes | How long it takes to cycle |
+| `select.peatus_<from>_<to>_time_mode` | `now`, `depart`, `arrive` | Plan from now, to leave at the chosen time, or to arrive by it |
+| `datetime.peatus_<from>_<to>_time` | date and time | The chosen time; unset until you pick one |
+
+Changing either control re-plans the board straight away, without a reload,
+and both are restored after a restart. The board plans from now whenever the
+mode is `now`, no time is set, or the time has already passed — so a board left
+on "arrive by 09:00" goes back to live departures once 09:00 is gone. Arriving
+by a time, the five journeys kept are the ones arriving latest before it. The
+walking and cycling plans are moved to start at, or arrive by, the chosen time.
 
 There is deliberately **no "next journey" sensor**. Consecutive journeys can use
 different lines and even different modes, so a single entity called "next" would
@@ -360,6 +371,7 @@ instead, because they start whenever you do — a timestamp would only ever say
 | `origin`, `destination` | `Home`, `Work` | |
 | `origin_entity_id`, `destination_entity_id` | `person.romi`, `zone.work` | |
 | `origin_place`, `destination_place` | `null`, `Viru Väljak 4, Kesklinna linnaosa` | What a typed address was matched to; `null` when that end is an entity, a zone or coordinates |
+| `time_mode`, `requested_time` | `arrive`, `2026-09-23T06:00:00+00:00` | What the board actually planned for: `now` and `null` whenever it fell back to now |
 | `legs` | see below | Every segment of the journey |
 
 The `departure_*` attributes are about **boarding**, not about leaving the
@@ -660,6 +672,15 @@ cards:
         name: From
       - entity: input_text.to
         name: To
+      - entity: select.peatus_from_to_time_mode
+        name: When
+      - type: conditional
+        conditions:
+          - entity: select.peatus_from_to_time_mode
+            state_not: now
+        row:
+          entity: datetime.peatus_from_to_time
+          name: Time
   - type: button
     name: Search
     icon: mdi:magnify
@@ -673,12 +694,21 @@ cards:
       {% set a = states.sensor.peatus_from_to_journey_1.attributes %}
       {{ a.origin_place or states('input_text.from') }} →
       {{ a.destination_place or states('input_text.to') }}
+      {% if a.requested_time %}
+      ({{ 'leaving after' if a.time_mode == 'depart' else 'arriving by' }}
+      {{ as_local(as_datetime(a.requested_time)).strftime('%d.%m %H:%M') }})
+      {% endif %}
 ```
 
 and below it the `itinerary_row` cards from the previous section, pointed at
 `sensor.peatus_from_to_journey_1` … `_5`, `_walk` and `_ride`. The markdown card
 shows what each address was actually matched to, which is worth keeping: a
-loose match plans confidently to the wrong place.
+loose match plans confidently to the wrong place. It also shows the time the
+board planned for, read from the sensor rather than the controls: a time that
+is missing or already past plans from now, and the card should say so.
+
+The time controls need no button: changing either one re-plans the board by
+itself. Only the text boxes wait for **Search**.
 
 The button can be replaced by an automation that searches whenever either box
 changes:
@@ -693,6 +723,30 @@ automation:
       - action: homeassistant.update_entity
         target:
           entity_id: sensor.peatus_from_to_journey_1
+```
+
+### Arriving by the same time every day
+
+The chosen time includes a date, so once it passes the board goes back to
+planning from now. For a deadline that repeats, such as being at work by 09:00,
+set the board to **Arrive by** once and let an automation move the time to
+each new day:
+
+```yaml
+automation:
+  - alias: Plan the commute to arrive by nine
+    triggers:
+      - trigger: time
+        at: "05:00:00"
+    conditions:
+      - condition: time
+        weekday: [mon, tue, wed, thu, fri]
+    actions:
+      - action: datetime.set_value
+        target:
+          entity_id: datetime.peatus_home_work_time
+        data:
+          datetime: "{{ today_at('09:00') }}"
 ```
 
 

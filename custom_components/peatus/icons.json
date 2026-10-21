@@ -1,5 +1,20 @@
 {
   "entity": {
+    "select": {
+      "time_mode": {
+        "default": "mdi:clock-start",
+        "state": {
+          "now": "mdi:clock-fast",
+          "depart": "mdi:clock-start",
+          "arrive": "mdi:clock-end"
+        }
+      }
+    },
+    "datetime": {
+      "time": {
+        "default": "mdi:calendar-clock"
+      }
+    },
     "sensor": {
       "next_departure": {
         "default": "mdi:clock-out"

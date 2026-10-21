@@ -40,6 +40,7 @@ from .const import (
     MODE_WALK,
     NUM_DEPARTURES,
     NUM_ITINERARIES,
+    TIME_NOW,
 )
 from .coordinator import (
     PeatusConfigEntry,
@@ -422,6 +423,14 @@ class PeatusJourneySensor(CoordinatorEntity[PeatusJourneyCoordinator], SensorEnt
             "destination": entry.data.get(CONF_DESTINATION_NAME),
             "destination_entity_id": entry.data.get(CONF_DESTINATION_ENTITY),
             "destination_place": data.destination_place if data else None,
+            # What the board planned for, which reads "now" whenever the chosen
+            # time is unset or already past, so a card can say which it shows.
+            "time_mode": data.time_mode if data else TIME_NOW,
+            "requested_time": (
+                data.requested_time.isoformat()
+                if data and data.requested_time
+                else None
+            ),
             "legs": [],
         }
 

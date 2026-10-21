@@ -29,6 +29,18 @@ NUM_DEPARTURES: Final = 10
 #: timetable.
 NUM_ITINERARIES: Final = 5
 
+#: When a journey board plans for: from now, leaving at a chosen time, or
+#: arriving by one. Held by the board's own select entity, not the config entry,
+#: so a dashboard can change it as freely as it changes a search box.
+TIME_NOW: Final = "now"
+TIME_DEPART: Final = "depart"
+TIME_ARRIVE: Final = "arrive"
+TIME_MODES: Final = [TIME_NOW, TIME_DEPART, TIME_ARRIVE]
+
+#: The feed reads a requested date and time as wall-clock time here, whatever
+#: timezone Home Assistant itself runs in.
+FEED_TIMEZONE: Final = "Europe/Tallinn"
+
 #: How far ahead to look for departures, in seconds. A full day keeps the
 #: sensors populated overnight when the next service is hours away.
 TIME_RANGE: Final = 86400

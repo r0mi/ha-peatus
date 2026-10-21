@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -26,13 +27,17 @@ from custom_components.peatus.const import (
     DEFAULT_WALK_SPEED,
     DOMAIN,
     NUM_ITINERARIES,
+    TIME_ARRIVE,
+    TIME_DEPART,
+    TIME_NOW,
 )
 from custom_components.peatus.coordinator import PeatusJourneyCoordinator
 from homeassistant.const import CONF_SCAN_INTERVAL
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import UpdateFailed
+from homeassistant.util import dt as dt_util
 
-from .conftest import make_itinerary, make_leg
+from .conftest import BASE, make_itinerary, make_leg
 
 ORIGIN = "person.romi"
 DESTINATION = "zone.work"
@@ -539,3 +544,113 @@ async def test_api_errors_become_update_failures(hass: HomeAssistant) -> None:
 
     with pytest.raises(UpdateFailed):
         await coordinator._async_update_data()
+
+
+async def test_a_chosen_time_reaches_the_planner(hass: HomeAssistant) -> None:
+    """Leaving at a later time plans for that time rather than now."""
+    place(hass, ORIGIN, 59.35, 24.63)
+    place(hass, DESTINATION, 59.39, 24.72)
+    coordinator, api = build_coordinator(hass)
+    when = dt_util.utcnow() + timedelta(hours=2)
+    coordinator.time_mode = TIME_DEPART
+    coordinator.chosen_time = when
+
+    data = await coordinator._async_update_data()
+
+    plan_options = api.async_plan.await_args.args[4]
+    assert plan_options.when == when
+    assert plan_options.arrive_by is False
+    assert data.time_mode == TIME_DEPART
+    assert data.requested_time == when
+
+
+@pytest.mark.parametrize(
+    ("time_mode", "offset"),
+    [
+        # "Now" ignores whatever time is still set from before.
+        (TIME_NOW, timedelta(hours=2)),
+        # A time already past would only offer journeys that have left.
+        (TIME_ARRIVE, timedelta(minutes=-5)),
+        # A mode picked before any time is set.
+        (TIME_DEPART, None),
+    ],
+)
+async def test_the_board_falls_back_to_now(
+    hass: HomeAssistant, time_mode: str, offset: timedelta | None
+) -> None:
+    """Without a usable time the board plans from now, and says so."""
+    place(hass, ORIGIN, 59.35, 24.63)
+    place(hass, DESTINATION, 59.39, 24.72)
+    coordinator, api = build_coordinator(hass)
+    coordinator.time_mode = time_mode
+    coordinator.chosen_time = dt_util.utcnow() + offset if offset else None
+
+    data = await coordinator._async_update_data()
+
+    assert api.async_plan.await_args.args[4].when is None
+    assert data.time_mode == TIME_NOW
+    assert data.requested_time is None
+
+
+async def test_arriving_keeps_the_plans_nearest_the_deadline(
+    hass: HomeAssistant,
+) -> None:
+    """A larger request only adds earlier arrivals, so those are the ones cut."""
+    place(hass, ORIGIN, 59.35, 24.63)
+    place(hass, DESTINATION, 59.39, 24.72)
+    coordinator, api = build_coordinator(hass)
+    coordinator.time_mode = TIME_ARRIVE
+    coordinator.chosen_time = dt_util.utcnow() + timedelta(hours=2)
+    # Latest arrival first, the way the feed answers an arrive-by plan.
+    api.async_plan = AsyncMock(
+        return_value=[
+            make_itinerary([make_leg(start=600 * (10 - n))])
+            for n in range(NUM_ITINERARIES + 2)
+        ]
+    )
+
+    data = await coordinator._async_update_data()
+
+    starts = [itinerary.start_timestamp - BASE for itinerary in data.itineraries]
+    assert starts == [600 * n for n in range(6, 11)]
+    assert api.async_plan.await_args.args[4].arrive_by is True
+
+
+async def test_walk_and_ride_move_to_the_chosen_time(hass: HomeAssistant) -> None:
+    """The fixed plans are moved to the time rather than planned again."""
+    place(hass, ORIGIN, 59.35, 24.63)
+    place(hass, DESTINATION, 59.39, 24.72)
+    coordinator, api = build_coordinator(hass)
+    when = (dt_util.utcnow() + timedelta(hours=2)).replace(microsecond=0)
+    coordinator.time_mode = TIME_ARRIVE
+    coordinator.chosen_time = when
+
+    data = await coordinator._async_update_data()
+
+    walk = data.walk
+    assert walk.end_timestamp == int(when.timestamp())
+    assert walk.duration == make_itinerary().duration
+    assert walk.legs[0].start_timestamp == walk.start_timestamp
+    assert walk.legs[-1].end_timestamp == walk.end_timestamp
+    # Moved, not re-planned, and the cached original is left as it was.
+    api.async_plan_walk.assert_awaited_once()
+    coordinator.time_mode = TIME_NOW
+    data = await coordinator._async_update_data()
+    assert data.walk.start_timestamp == BASE
+
+
+async def test_only_a_change_that_matters_replans(hass: HomeAssistant) -> None:
+    """Picking a mode with no time set yet costs no request."""
+    place(hass, ORIGIN, 59.35, 24.63)
+    place(hass, DESTINATION, 59.39, 24.72)
+    coordinator, _ = build_coordinator(hass)
+    coordinator.data = await coordinator._async_update_data()
+
+    with patch.object(coordinator, "async_request_refresh") as refresh:
+        coordinator.time_mode = TIME_DEPART
+        await coordinator.async_replan_if_moved()
+        refresh.assert_not_awaited()
+
+        coordinator.chosen_time = dt_util.utcnow() + timedelta(hours=1)
+        await coordinator.async_replan_if_moved()
+        refresh.assert_awaited_once()

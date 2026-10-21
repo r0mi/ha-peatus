@@ -114,6 +114,21 @@
     }
   },
   "entity": {
+    "select": {
+      "time_mode": {
+        "name": "Plan for",
+        "state": {
+          "now": "Now",
+          "depart": "Leave at",
+          "arrive": "Arrive by"
+        }
+      }
+    },
+    "datetime": {
+      "time": {
+        "name": "Time"
+      }
+    },
     "sensor": {
       "next_departure": {
         "name": "Next departure"
