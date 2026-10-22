@@ -3,6 +3,7 @@
 # Peatus.ee public transport for Home Assistant
 
 [![hacs][hacs-badge]][hacs]
+[![Installs][installs-badge]][installs]
 [![Release][release-badge]][releases]
 [![License][license-badge]][license]
 [![Validate](https://github.com/r0mi/ha-peatus/actions/workflows/validate.yml/badge.svg)](https://github.com/r0mi/ha-peatus/actions/workflows/validate.yml)
@@ -882,6 +883,8 @@ endorsed by peatus.ee or the Transport Administration.
 
 [hacs]: https://github.com/hacs/integration
 [hacs-badge]: https://img.shields.io/badge/HACS-Default-41BDF5.svg
+[installs]: https://analytics.home-assistant.io/custom_integrations
+[installs-badge]: https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.peatus.total
 [license]: https://github.com/r0mi/ha-peatus/blob/main/LICENSE
 [license-badge]: https://img.shields.io/github/license/r0mi/ha-peatus?color=29c64d
 [my-config-flow]: https://my.home-assistant.io/redirect/config_flow_start/?domain=peatus
